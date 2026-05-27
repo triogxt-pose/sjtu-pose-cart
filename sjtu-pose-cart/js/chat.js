@@ -2,7 +2,7 @@
 
 // TODO: 替换为实际的LLM API密钥和端点
 const LLM_CONFIG = {
-    apiKey: 'sk-W2fWqhpuiq5MvwSwaauUYg',     // 请替换为你的 API Key
+    apiKey: '',     // 请替换为你的 API Key
     baseUrl: 'https://models.sjtu.edu.cn/api/v1',  // SJTU 模型平台
     model: 'minimax',
     enabled: false  // 设为 true 启用真实 API 调用
