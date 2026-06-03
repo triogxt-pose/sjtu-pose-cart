@@ -1,20 +1,8 @@
 // ===== AI 聊天助手 =====
-
-// TODO: 替换为实际的LLM API密钥和端点
-const LLM_CONFIG = {
-    apiKey: '',     // 请替换为你的 API Key
-    baseUrl: 'https://models.sjtu.edu.cn/api/v1',  // SJTU 模型平台
-    model: 'minimax',
-    enabled: false  // 设为 true 启用真实 API 调用
-};
-
-// 语音识别配置
-const SPEECH_CONFIG = {
-    enabled: true,
-    lang: 'zh-CN'
-};
+// 支持本地关键词匹配 和 远程 LLM API 调用
 
 let chatHistory = [];
+let chatTypingTimer = null;
 
 function initChat() {
     const sendBtn = document.getElementById('btn-send');
@@ -22,14 +10,26 @@ function initChat() {
     const voiceBtn = document.getElementById('btn-voice');
 
     if (sendBtn) sendBtn.addEventListener('click', sendMessage);
-    if (input) input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendMessage();
-    });
+    if (input) {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    }
     if (voiceBtn) voiceBtn.addEventListener('click', startVoiceInput);
+}
+
+// 快捷发送
+function quickSend(text) {
+    const input = document.getElementById('chat-input');
+    if (input) {
+        input.value = text;
+        sendMessage();
+    }
 }
 
 function sendMessage() {
     const input = document.getElementById('chat-input');
+    if (!input) return;
     const msg = input.value.trim();
     if (!msg) return;
 
@@ -37,22 +37,29 @@ function sendMessage() {
     input.value = '';
     chatHistory.push({ role: 'user', content: msg });
 
-    // 模拟AI思考延迟
-    const typingEl = addChatMessage('ai', '正在思考...');
-    
-    if (LLM_CONFIG.enabled && LLM_CONFIG.apiKey !== 'YOUR_API_KEY_HERE') {
+    // 限制历史长度
+    if (chatHistory.length > APP_CONFIG.maxChatHistory * 2) {
+        chatHistory = chatHistory.slice(-APP_CONFIG.maxChatHistory * 2);
+    }
+
+    // 显示思考中
+    const typingEl = addChatMessage('ai', '<span class="typing-dots">导购思考中<span>.</span><span>.</span><span>.</span></span>');
+
+    // 判断使用哪种方式
+    if (API_CONFIG.llm.enabled && API_CONFIG.llm.apiKey) {
         callLLMAPI(msg, typingEl);
     } else {
-        // 本地关键词匹配（离线模式）
-        setTimeout(() => {
+        // 本地关键词匹配
+        chatTypingTimer = setTimeout(() => {
             removeMessage(typingEl);
             localAIResponse(msg);
-        }, 800 + Math.random() * 1200);
+        }, 800 + Math.random() * 600);
     }
 }
 
 function addChatMessage(role, content) {
     const container = document.getElementById('chat-messages');
+    if (!container) return null;
     const div = document.createElement('div');
     div.className = `chat-msg ${role}`;
     div.innerHTML = `<div class="chat-bubble">${content}</div>`;
@@ -65,13 +72,13 @@ function removeMessage(el) {
     if (el && el.parentNode) el.parentNode.removeChild(el);
 }
 
-// 本地AI响应（关键词匹配 + 推荐卡片）
+// ===== 本地 AI 响应 =====
 function localAIResponse(msg) {
     const lower = msg.toLowerCase();
-    let response = '';
+    let detectedPeople = null;
+    let detectedStyle = null;
 
     // 检测人数
-    let detectedPeople = null;
     for (const [key, keywords] of Object.entries(AI_KEYWORDS.people)) {
         if (keywords.some(k => lower.includes(k))) {
             detectedPeople = key;
@@ -80,7 +87,6 @@ function localAIResponse(msg) {
     }
 
     // 检测风格
-    let detectedStyle = null;
     for (const [key, keywords] of Object.entries(AI_KEYWORDS.style)) {
         if (keywords.some(k => lower.includes(k))) {
             detectedStyle = key;
@@ -88,95 +94,110 @@ function localAIResponse(msg) {
         }
     }
 
-    // 推荐地点 (随机推荐3个)
+    // 筛选推荐
     let recLocations = [...LOCATIONS];
-    if (detectedStyle) {
-        recLocations = recLocations.filter(l => l.tags.some(t => 
-            t === detectedStyle || detectedStyle.includes(t)
-        ));
-    }
-    recLocations = recLocations.slice(0, 3);
-
-    // 推荐姿势
     let recPoses = [...POSES];
+
     if (detectedPeople) {
         recPoses = recPoses.filter(p => p.people === detectedPeople);
     }
     if (detectedStyle) {
-        recPoses = recPoses.filter(p => p.style === detectedStyle || 
-            p.style === detectedStyle.replace('浪漫','浪漫').replace('活泼','活泼'));
+        recLocations = recLocations.filter(l => l.tags.some(t => detectedStyle.includes(t) || t.includes(detectedStyle)));
+        recPoses = recPoses.filter(p => p.style === detectedStyle || detectedStyle.includes(p.style));
     }
-    recPoses = recPoses.slice(0, 3);
 
-    if (recLocations.length === 0 && recPoses.length === 0) {
-        response = `好的！关于"${msg}"，我建议你可以试试：<br><br>
-            🏛️ <b>经典路线</b>：东大门 → 中院 → 宣怀大道 → 思源湖<br>
-            🎭 <b>创意路线</b>：蔷薇园 → 仰思坪 → 新行政楼<br><br>
-            想要什么风格的推荐呢？试试告诉我"几个人"和"想要什么风格"吧！`;
+    // 如果经典照片风格，优先推荐 hasSkeleton 的姿势
+    if (detectedStyle === '经典照片') {
+        const classicPoses = recPoses.filter(p => p.hasSkeleton);
+        const otherPoses = recPoses.filter(p => !p.hasSkeleton);
+        recPoses = [...classicPoses, ...otherPoses];
+    }
+
+    recLocations = recLocations.slice(0, 3);
+    if (recPoses.length === 0) recPoses = POSES.sort(() => Math.random() - 0.5).slice(0, 4);
+    recPoses = recPoses.slice(0, 4);
+
+    // 生成回复文本
+    let response = '';
+    if (detectedPeople && detectedStyle) {
+        response = `明白了！<b>${detectedPeople}</b> · <b>${detectedStyle}风</b>，以下是为你的专属推荐 👇`;
+    } else if (detectedPeople) {
+        response = `好的！${detectedPeople}的阵容，来看看我的推荐 👇`;
+    } else if (detectedStyle) {
+        response = `${detectedStyle}风是个好选择！来看看我为你搭配的方案 👇`;
     } else {
-        if (detectedPeople || detectedStyle) {
-            response = `明白了！${detectedPeople ? detectedPeople : ''}${detectedStyle ? ' · ' + detectedStyle + '风' : ''}，以下是为你的推荐：`;
-        } else {
-            response = `好的！以下是我的推荐：`;
-        }
+        response = `好的！关于"${msg.length > 15 ? msg.slice(0, 15) + '...' : msg}"，我推荐以下方案 👇`;
     }
 
     addChatMessage('ai', response);
 
-    // 在地点栏下方插入地点推荐卡片
+    // 地点推荐卡片
     if (recLocations.length > 0) {
         const cardsHtml = recLocations.map(l => `
-            <div class="card-item">
-                <div class="card-img">${l.emoji}</div>
-                <div class="card-name">${l.name}</div>
+            <div class="chat-card" onclick="addToCart('location',{id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">
+                <div class="card-emoji">${l.emoji}</div>
+                <div class="card-title">${l.name}</div>
                 <div class="card-meta">${l.desc}</div>
-                <button class="card-add-btn" onclick="addToCart('location', {id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">
-                    🛒 加入购物车
-                </button>
+                <button class="card-add-btn" onclick="event.stopPropagation();addToCart('location',{id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">🛒 加购</button>
             </div>
         `).join('');
-        addChatMessage('ai', `<div class="rec-cards" style="flex-wrap:wrap;gap:10px;">${cardsHtml}</div>`);
+        addChatMessage('ai', `<div style="font-size:12px;color:var(--text-light);margin-bottom:4px;">📍 推荐地点：</div><div class="chat-card-wrap">${cardsHtml}</div>`);
     }
 
-    // 在姿势栏下方插入姿势推荐卡片
+    // 姿势推荐卡片
     if (recPoses.length > 0) {
         const cardsHtml = recPoses.map(p => `
-            <div class="card-item">
-                <div class="card-img">${p.emoji}</div>
-                <div class="card-name">${p.name}</div>
-                <div class="card-meta">${p.people}人 · ${p.style}</div>
-                <button class="card-add-btn" onclick="addToCart('pose', {id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">
-                    🛒 加入购物车
-                </button>
+            <div class="chat-card" onclick="addToCart('pose',{id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">
+                <div class="card-emoji">${p.emoji}</div>
+                <div class="card-title">${p.name}</div>
+                <div class="card-meta">${p.people}人 · ${p.style}${p.hasSkeleton ? ' · 📸AI比对' : ''}</div>
+                <button class="card-add-btn" onclick="event.stopPropagation();addToCart('pose',{id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">🛒 加购</button>
             </div>
         `).join('');
-        addChatMessage('ai', `<div class="rec-cards" style="flex-wrap:wrap;gap:10px;">${cardsHtml}</div>`);
+        addChatMessage('ai', `<div style="font-size:12px;color:var(--text-light);margin-bottom:4px;">🕺 推荐姿势：</div><div class="chat-card-wrap">${cardsHtml}</div>`);
     }
+
+    // 如果有老照片姿势，追加提示
+    if (recPoses.some(p => p.hasSkeleton)) {
+        addChatMessage('ai', '💡 小提示：标记了"📸AI比对"的姿势，可以在订单交付页使用 AI 姿势比对功能，帮你拍出复刻级老照片哦！');
+    }
+
+    // 结尾俏皮话
+    const closings = [
+        '喜欢就加购吧～点击卡片即可放入购物车 🛒',
+        '心动不如行动，加购后可以去购物车自由组合哦！',
+        '这些推荐还满意吗？可以继续告诉我更多需求～',
+        '相中哪个就点"加购"，像逛淘宝一样轻松！',
+        '选好了就去购物车组合吧，AI 帮你规划路线 🗺️'
+    ];
+    addChatMessage('ai', closings[Math.floor(Math.random() * closings.length)]);
 }
 
-// 调用真实LLM API（参考 Gradio-YOLO-LLM 的写法）
+// ===== 远程 LLM API 调用 =====
 async function callLLMAPI(msg, typingEl) {
     try {
-        const response = await fetch(`${LLM_CONFIG.baseUrl}/chat/completions`, {
+        const response = await fetch(`${API_CONFIG.llm.baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${LLM_CONFIG.apiKey}`
+                'Authorization': `Bearer ${API_CONFIG.llm.apiKey}`
             },
             body: JSON.stringify({
-                model: LLM_CONFIG.model,
+                model: API_CONFIG.llm.model,
                 messages: [
-                    { role: 'system', content: '你是交大毕业照策划助手。根据用户提供的人数和风格，推荐拍摄地点和姿势。回复要简洁有趣，像网购导购一样。' },
-                    ...chatHistory
+                    { role: 'system', content: API_CONFIG.llm.systemPrompt },
+                    ...chatHistory.slice(-10)
                 ],
-                temperature: 0.7,
-                max_tokens: 300
+                temperature: API_CONFIG.llm.temperature,
+                max_tokens: API_CONFIG.llm.maxTokens
             })
         });
 
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
         const data = await response.json();
         removeMessage(typingEl);
-        
+
         if (data.choices && data.choices[0]) {
             const aiMsg = data.choices[0].message.content;
             addChatMessage('ai', aiMsg);
@@ -184,52 +205,95 @@ async function callLLMAPI(msg, typingEl) {
         }
     } catch (error) {
         removeMessage(typingEl);
-        console.error('LLM API 调用失败:', error);
+        if (APP_CONFIG.debug) {
+            console.warn('LLM API 调用失败，降级为本地模式:', error.message);
+        }
         localAIResponse(msg);
     }
 }
 
-// 语音输入
+// ===== AI 文案生成 =====
+async function generateAICopyText(locations, poses, style) {
+    // 如果启用了远程API，尝试调用
+    if (API_CONFIG.copyGen.enabled && API_CONFIG.copyGen.apiKey) {
+        try {
+            const locNames = locations.map(l => l.name || l.locationName).join('、');
+            const poseNames = poses.map(p => p.name || p.poseName).join('、');
+            const response = await fetch(`${API_CONFIG.copyGen.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_CONFIG.copyGen.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: API_CONFIG.copyGen.model,
+                    messages: [
+                        { role: 'system', content: API_CONFIG.copyGen.systemPrompt },
+                        { role: 'user', content: `拍摄地点：${locNames}\n拍摄姿势：${poseNames}\n偏好风格：${style || 'all'}` }
+                    ],
+                    temperature: API_CONFIG.copyGen.temperature,
+                    max_tokens: API_CONFIG.copyGen.maxTokens
+                })
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const data = await response.json();
+            if (data.choices && data.choices[0]) {
+                return data.choices[0].message.content;
+            }
+        } catch (e) {
+            if (APP_CONFIG.debug) {
+                console.warn('文案生成API调用失败，使用本地模板:', e.message);
+            }
+        }
+    }
+    return null; // 返回 null 表示使用本地模板
+}
+
+// ===== 语音输入 =====
 function startVoiceInput() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        showToast('当前浏览器不支持语音输入');
+    const voiceBtn = document.getElementById('btn-voice');
+
+    // 优先使用浏览器内置 Web Speech API
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.lang = API_CONFIG.speech.lang || 'zh-CN';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        voiceBtn.classList.add('recording');
+        showToast('正在聆听...');
+
+        recognition.start();
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            const input = document.getElementById('chat-input');
+            if (input) input.value = transcript;
+            voiceBtn.classList.remove('recording');
+            showToast(`识别结果：${transcript}`);
+            sendMessage();
+        };
+
+        recognition.onerror = (event) => {
+            voiceBtn.classList.remove('recording');
+            if (event.error === 'not-allowed') {
+                showToast('请在浏览器设置中允许麦克风权限');
+            } else if (event.error === 'no-speech') {
+                showToast('未检测到语音，请重试');
+            } else {
+                showToast('语音识别失败，请使用文字输入');
+            }
+        };
+
+        recognition.onend = () => {
+            voiceBtn.classList.remove('recording');
+        };
         return;
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = SPEECH_CONFIG.lang;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    const voiceBtn = document.getElementById('btn-voice');
-    voiceBtn.textContent = '🔴';
-    voiceBtn.style.background = '#e74c3c';
-    voiceBtn.style.color = 'white';
-    showToast('正在聆听...');
-
-    recognition.start();
-
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        document.getElementById('chat-input').value = transcript;
-        voiceBtn.textContent = '🎤';
-        voiceBtn.style.background = '';
-        voiceBtn.style.color = '';
-        showToast(`识别结果：${transcript}`);
-        sendMessage();
-    };
-
-    recognition.onerror = () => {
-        voiceBtn.textContent = '🎤';
-        voiceBtn.style.background = '';
-        voiceBtn.style.color = '';
-        showToast('语音识别失败，请重试');
-    };
-
-    recognition.onend = () => {
-        voiceBtn.textContent = '🎤';
-        voiceBtn.style.background = '';
-        voiceBtn.style.color = '';
-    };
+    // 降级方案：提示用户
+    showToast('当前浏览器不支持语音输入，请使用文字输入');
 }

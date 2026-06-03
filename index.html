@@ -2,43 +2,97 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>交大毕业照购物车</title>
     <link rel="stylesheet" href="css/style.css">
-    <!-- MediaPipe Hands -->
+    <!-- MediaPipe Tasks Vision -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm" type="module" crossorigin></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18" defer></script>
     <!-- SortableJS for drag-and-drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body>
+    <!-- ===== 校徽 Loading 动画 ===== -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div style="text-align:center;">
+            <div class="loading-logo" id="loading-logo">
+                <!-- TODO: 替换为交大校徽 SVG -->
+                <svg viewBox="0 0 100 100" width="80" height="80">
+                    <circle cx="50" cy="50" r="45" fill="none" stroke="#dce3eb" stroke-width="6"/>
+                    <circle cx="50" cy="50" r="45" fill="none" stroke="var(--primary)" stroke-width="6"
+                            stroke-dasharray="283" stroke-dashoffset="283" id="loading-circle"
+                            transform="rotate(-90 50 50)" style="transition: stroke-dashoffset 0.05s linear;"/>
+                </svg>
+            </div>
+            <div class="loading-text" id="loading-text">正在准备你的毕业企划...</div>
+        </div>
+    </div>
+
     <!-- ===== 阶段一：封面迎宾页 ===== -->
     <div id="stage-cover" class="stage active">
         <div class="cover-container">
-            <div class="cover-bg">
-                <div class="cover-overlay"></div>
-                <div class="cover-content">
-                    <div class="cover-icon">🎓</div>
+            <!-- 视频背景 -->
+            <div class="cover-bg-video-wrap">
+                <video class="cover-bg-video" id="cover-bg-video" autoplay muted loop playsinline
+                       poster="assets/images/cover/siyuan_lake.jpg">
+                    <source src="assets/images/cover/siyuan_lake.mp4" type="video/mp4">
+                </video>
+                <div class="cover-bg-video-overlay"></div>
+            </div>
+            <!-- 降级背景（视频不可用时） -->
+            <div class="cover-bg-fallback">
+                <div class="cover-bg-gradient"></div>
+                <div class="cover-bg-slide active" id="cover-slide-0"></div>
+                <div class="cover-bg-slide" id="cover-slide-1"></div>
+                <div class="cover-bg-slide" id="cover-slide-2"></div>
+            </div>
+            <!-- 光斑粒子 -->
+            <div class="cover-particles" id="cover-particles"></div>
+            <!-- 校徽水印 -->
+            <div class="cover-watermark">
+                <!-- TODO: 替换为 assets/images/logo/sjtu_logo_watermark.png -->
+                <svg viewBox="0 0 200 200" width="160" height="160" opacity="0.06">
+                    <circle cx="100" cy="100" r="90" fill="none" stroke="white" stroke-width="2"/>
+                    <circle cx="100" cy="100" r="60" fill="none" stroke="white" stroke-width="1"/>
+                    <text x="100" y="108" text-anchor="middle" fill="white" font-size="28" font-weight="bold">SJTU</text>
+                </svg>
+            </div>
+            <!-- 主卡片 -->
+            <div class="cover-card">
+                <div class="cover-inner">
+                    <!-- 校徽 -->
+                    <div class="cover-logo">
+                        <!-- TODO: 替换为 assets/images/logo/sjtu_logo.png -->
+                        <svg viewBox="0 0 100 100" width="64" height="64">
+                            <circle cx="50" cy="50" r="46" fill="none" stroke="var(--primary)" stroke-width="3"/>
+                            <circle cx="50" cy="50" r="36" fill="none" stroke="var(--primary)" stroke-width="1.5" opacity="0.6"/>
+                            <text x="50" y="44" text-anchor="middle" fill="var(--primary)" font-size="12" font-weight="900">1896</text>
+                            <text x="50" y="62" text-anchor="middle" fill="var(--primary)" font-size="10" font-weight="700">SJTU</text>
+                        </svg>
+                    </div>
                     <h1 class="cover-title">交大毕业照<br>购物车</h1>
-                    <p class="cover-subtitle">为你的毕业季，策划一场完美的拍摄之旅</p>
+                    <p class="cover-subtitle">你的独家毕业企划，一站加购</p>
                     <div class="cover-features">
                         <span>📸 AI选景</span>
                         <span>🕺 姿势推荐</span>
                         <span>🗺️ 智能路线</span>
                     </div>
-                    <button class="btn-primary btn-large" onclick="goToStage('stage-shop')">
-                        🛒 开启我的毕业拍摄企划
-                    </button>
+                    <div class="cover-btn-wrap">
+                        <button class="btn-cover-start" onclick="startJourney()">
+                            <span class="btn-cover-start-text">🛒 开启我的毕业拍摄企划</span>
+                            <span class="btn-cover-start-ripple"></span>
+                        </button>
+                    </div>
                     <p class="cover-hint">—— 像逛淘宝一样规划你的毕业照 ——</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ===== 阶段二：逛街挑货页 ===== -->
+    <!-- ===== 阶段二：主工作台（逛街挑货页） ===== -->
     <div id="stage-shop" class="stage">
         <div class="shop-header">
-            <h2>📸 毕业拍摄企划</h2>
+            <h2>🎓 毕业照选品大厅</h2>
             <button class="btn-cart-badge" onclick="goToStage('stage-cart')">
                 🛒 <span id="cart-count">0</span>
             </button>
@@ -47,71 +101,97 @@
         <!-- AI 聊天区域 -->
         <div class="chat-section">
             <div class="chat-header">
-                <span>🤖 AI 拍摄助手</span>
-                <span class="chat-hint">语音输入 / 文字输入</span>
+                <div class="chat-header-left">
+                    <div class="chat-avatar">🐴</div>
+                    <div>
+                        <div class="chat-header-title">AI 拍摄助手 · 小交</div>
+                        <div class="chat-header-subtitle">你的专属毕业照策划师</div>
+                    </div>
+                </div>
             </div>
             <div id="chat-messages" class="chat-messages">
                 <div class="chat-msg ai">
                     <div class="chat-bubble">
                         嗨！我是你的专属毕业照策划师 🎓<br>
-                        告诉我你们的人数、风格偏好，我来为你推荐最佳拍摄方案！
+                        请告诉我你们的人数、风格偏好，我来为你推荐最佳拍摄方案！
                     </div>
                 </div>
             </div>
+            <!-- 快捷短语 -->
+            <div class="chat-quick-replies" id="chat-quick-replies">
+                <button class="chat-quick-btn" onclick="quickSend('推荐爆款')">🔥 推荐爆款</button>
+                <button class="chat-quick-btn" onclick="quickSend('经典照片复刻')">🎬 经典照片复刻</button>
+                <button class="chat-quick-btn" onclick="quickSend('3-5人文艺风')">🎨 3-5人文艺风</button>
+                <button class="chat-quick-btn" onclick="quickSend('2人浪漫风')">💕 2人浪漫风</button>
+            </div>
             <div class="chat-input-area">
-                <button class="btn-voice" id="btn-voice" title="语音输入">🎤</button>
-                <input type="text" id="chat-input" class="chat-input" placeholder="例如：3个女生，想要情绪风...">
+                <button class="btn-voice" id="btn-voice" title="语音输入">🎙️</button>
+                <input type="text" id="chat-input" class="chat-input"
+                       placeholder="嗨！请告诉我你们的人数，我来推荐最佳方案！">
                 <button class="btn-send" id="btn-send">发送</button>
             </div>
         </div>
 
-        <!-- 推荐板块 -->
+        <!-- 经典照片复刻专区 -->
+        <div class="vintage-section" id="vintage-section">
+            <div class="vintage-header">
+                <h3>🎬 经典照片复刻</h3>
+                <span class="vintage-badge">AI姿势比对</span>
+                <button class="btn-text" onclick="showAllVintagePoses()" style="margin-left:auto;">查看全部 →</button>
+            </div>
+            <div class="vintage-cards" id="vintage-cards"></div>
+        </div>
+
+        <!-- 筛选条 -->
+        <div class="filter-bar" id="filter-bar">
+            <button class="filter-chip active" data-filter="all" onclick="applyFilter('all', this)">全部</button>
+            <button class="filter-chip" data-filter="1" onclick="applyFilter('1', this)">1人</button>
+            <button class="filter-chip" data-filter="2" onclick="applyFilter('2', this)">2人</button>
+            <button class="filter-chip" data-filter="3-5" onclick="applyFilter('3-5', this)">3-5人</button>
+            <button class="filter-chip" data-filter="6+" onclick="applyFilter('6+', this)">6+人</button>
+        </div>
+
+        <!-- 双瀑布流推荐 -->
         <div class="recommend-section">
-            <!-- 地点推荐 -->
-            <div class="rec-panel" id="location-panel">
-                <div class="rec-panel-header">
-                    <h3>📍 热门拍摄地点</h3>
-                    <button class="btn-text" onclick="showAllLocations()">查看全部 →</button>
+            <div class="dual-waterfall">
+                <!-- 左列：地点推荐 -->
+                <div class="waterfall-col">
+                    <div class="waterfall-col-header">
+                        <h3>📍 热门地点</h3>
+                        <button class="btn-text" onclick="showAllLocations()">更多 →</button>
+                    </div>
+                    <div id="location-waterfall"></div>
                 </div>
-                <div class="rec-cards" id="location-cards"></div>
+                <!-- 右列：姿势推荐 -->
+                <div class="waterfall-col">
+                    <div class="waterfall-col-header">
+                        <h3>🕺 热门姿势</h3>
+                        <button class="btn-text" onclick="showAllPoses()">更多 →</button>
+                    </div>
+                    <div id="pose-waterfall"></div>
+                </div>
             </div>
 
-            <!-- 姿势推荐 -->
-            <div class="rec-panel" id="pose-panel">
-                <div class="rec-panel-header">
-                    <h3>🕺 热门姿势推荐</h3>
-                    <button class="btn-text" onclick="showAllPoses()">查看全部 →</button>
+            <!-- 库入口 -->
+            <div class="lib-entry-row">
+                <div class="lib-entry-btn" onclick="showAllLocations()">
+                    <div class="lib-icon">📍</div>
+                    <div class="lib-label">全部地点库</div>
+                    <div class="lib-hint">10个经典拍摄地</div>
                 </div>
-                <!-- 姿势过滤器 -->
-                <div class="pose-filters">
-                    <select id="filter-people" onchange="filterPoses()">
-                        <option value="">人数筛选</option>
-                        <option value="1">1人</option>
-                        <option value="2">2人</option>
-                        <option value="3-5">3-5人</option>
-                        <option value="6+">6人以上</option>
-                    </select>
-                    <select id="filter-style" onchange="filterPoses()">
-                        <option value="">风格筛选</option>
-                        <option value="经典">经典</option>
-                        <option value="搞笑">搞笑</option>
-                        <option value="老照片">老照片</option>
-                    </select>
+                <div class="lib-entry-btn" onclick="showAllPoses()">
+                    <div class="lib-icon">🕺</div>
+                    <div class="lib-label">全部姿势库</div>
+                    <div class="lib-hint">28种拍摄姿势</div>
                 </div>
-                <div class="rec-cards" id="pose-cards"></div>
-                <!-- MediaPipe 姿势比对按钮 -->
-                <button class="btn-mediapipe" id="btn-mediapipe" onclick="openMediaPipe()">
-                    📸 开启AI姿势比对
-                </button>
             </div>
         </div>
 
-        <!-- 底部导航 -->
-        <div class="bottom-nav">
-            <button class="nav-btn active" onclick="switchShopTab('recommend')">🏠 推荐</button>
-            <button class="nav-btn" onclick="switchShopTab('locations')">📍 地点库</button>
-            <button class="nav-btn" onclick="switchShopTab('poses')">🕺 姿势库</button>
-        </div>
+        <!-- 底部悬浮购物车 -->
+        <button class="cart-fab" onclick="goToStage('stage-cart')">
+            🛒
+            <span class="fab-badge" id="cart-fab-count">0</span>
+        </button>
     </div>
 
     <!-- ===== 全部地点弹窗 ===== -->
@@ -132,20 +212,13 @@
                 <h3>🕺 全部姿势库</h3>
                 <button class="btn-close" onclick="closeModal('modal-poses')">✕</button>
             </div>
-            <div class="pose-filters">
-                <select id="modal-filter-people" onchange="filterModalPoses()">
-                    <option value="">人数筛选</option>
-                    <option value="1">1人</option>
-                    <option value="2">2人</option>
-                    <option value="3-5">3-5人</option>
-                    <option value="6+">6人以上</option>
-                </select>
-                <select id="modal-filter-style" onchange="filterModalPoses()">
-                    <option value="">风格筛选</option>
-                    <option value="经典">经典</option>
-                    <option value="搞笑">搞笑</option>
-                    <option value="老照片">老照片</option>
-                </select>
+            <div class="filter-bar" style="padding:0 22px;">
+                <button class="filter-chip active" data-modal-filter="all" onclick="applyModalFilter('all', this)">全部</button>
+                <button class="filter-chip" data-modal-filter="1" onclick="applyModalFilter('1', this)">1人</button>
+                <button class="filter-chip" data-modal-filter="2" onclick="applyModalFilter('2', this)">2人</button>
+                <button class="filter-chip" data-modal-filter="3-5" onclick="applyModalFilter('3-5', this)">3-5人</button>
+                <button class="filter-chip" data-modal-filter="6+" onclick="applyModalFilter('6+', this)">6+人</button>
+                <button class="filter-chip" data-modal-filter="经典照片" onclick="applyModalFilter('经典照片', this)">经典照片</button>
             </div>
             <div class="modal-body" id="all-poses-grid"></div>
         </div>
@@ -162,7 +235,13 @@
             <div class="mediapipe-view">
                 <video id="mediapipe-video" autoplay playsinline></video>
                 <canvas id="mediapipe-canvas"></canvas>
-                <div class="skeleton-overlay" id="skeleton-guide"></div>
+                <!-- 辅助拍摄虚线框 -->
+                <div class="composition-guide" id="composition-guide"></div>
+                <!-- 姿势小图角标 -->
+                <div class="pose-thumbnail" id="pose-thumbnail">
+                    <!-- TODO: 替换为实际姿势小图 -->
+                    🕺
+                </div>
             </div>
             <div class="mediapipe-info">
                 <p>👆 请将身体与骨骼线框对齐，绿灯亮起即可拍照</p>
@@ -173,6 +252,11 @@
                     <span id="match-percent">0%</span>
                 </div>
             </div>
+            <div class="mediapipe-controls">
+                <button class="btn-pose-switch" onclick="switchTargetPose()" title="切换姿势">🔄</button>
+                <button class="btn-shutter" onclick="capturePhoto()" title="拍照"></button>
+                <button class="btn-pose-switch" onclick="closeMediaPipe()" title="返回">✕</button>
+            </div>
         </div>
     </div>
 
@@ -180,43 +264,67 @@
     <div id="stage-cart" class="stage">
         <div class="cart-header">
             <button class="btn-back" onclick="goToStage('stage-shop')">← 继续挑选</button>
-            <h2>🛒 我的拍摄企划</h2>
-            <span></span>
+            <h2>🛒 我的拍摄购物车</h2>
+            <button class="btn-cart-clear" onclick="clearCart()">清空</button>
         </div>
 
-        <div class="cart-summary">
-            <p>已选 <strong id="cart-location-count">0</strong> 个地点 · <strong id="cart-pose-count">0</strong> 个姿势</p>
+        <div class="cart-summary" id="cart-summary">
+            已选 <strong id="cart-location-count">0</strong> 个地点 · <strong id="cart-pose-count">0</strong> 个姿势
         </div>
 
-        <!-- 拖拽组合区域 -->
-        <div class="cart-combine-area">
-            <div class="cart-column" id="cart-poses-column">
-                <h3>🕺 姿势列表</h3>
-                <div class="cart-items" id="cart-poses-list"></div>
+        <!-- 空状态 -->
+        <div class="cart-empty" id="cart-empty" style="display:none;">
+            <div class="empty-icon">🛒</div>
+            <div class="empty-text">还没有商品，去大厅逛逛吧</div>
+            <div class="empty-hint">挑选你喜欢的拍摄地点和姿势</div>
+            <button class="btn-primary" onclick="goToStage('stage-shop')">去选品大厅</button>
+        </div>
+
+        <!-- 购物车主体 -->
+        <div id="cart-content">
+            <div class="cart-body">
+                <!-- 姿势列（可拖拽） -->
+                <div class="cart-column-wrap" id="cart-poses-col">
+                    <h3>🕺 姿势 <span class="col-count" id="pose-col-count">0</span></h3>
+                    <div class="cart-items-list" id="cart-poses-list"></div>
+                </div>
+                <!-- 地点列（拖放目标） -->
+                <div class="cart-column-wrap" id="cart-locations-col">
+                    <h3>📍 地点 <span class="col-count" id="loc-col-count">0</span></h3>
+                    <div class="cart-items-list" id="cart-locations-list"></div>
+                </div>
             </div>
-            <div class="cart-combine-hint">
-                <div class="hint-arrow">↔</div>
-                <p>拖拽姿势到地点进行绑定</p>
-            </div>
-            <div class="cart-column" id="cart-locations-column">
-                <h3>📍 地点列表</h3>
-                <div class="cart-items" id="cart-locations-list"></div>
-            </div>
-        </div>
 
-        <!-- 已绑定的组合 -->
-        <div class="cart-bindings" id="cart-bindings">
-            <h3>🔗 已绑定的拍摄组合</h3>
-            <div id="bindings-list"></div>
-        </div>
+            <!-- 组合操作区 -->
+            <div class="cart-combine-section">
+                <h3>📌 拖拽姿势 → 绑定地点</h3>
+                <p style="font-size:12px;color:var(--text-light);margin-bottom:12px;">
+                    长按左侧姿势卡片，拖到右侧地点上完成绑定
+                </p>
+                <div class="cart-combine-actions">
+                    <button class="btn-combine random" onclick="randomCombine()">
+                        🎲 随机组合
+                    </button>
+                    <button class="btn-combine" onclick="aiAutoBind()">
+                        🤖 AI 智能组合
+                    </button>
+                    <button class="btn-combine" onclick="clearAllBindings()">
+                        🗑️ 清除绑定
+                    </button>
+                </div>
+            </div>
 
-        <div class="cart-actions">
-            <button class="btn-primary btn-large" onclick="goToStage('stage-result')">
-                ✨ 一键生成我的毕业企划
-            </button>
-            <button class="btn-secondary" onclick="aiAutoBind()">
-                🤖 AI 自动组合
-            </button>
+            <!-- 已绑定列表 -->
+            <div class="cart-bindings" id="cart-bindings">
+                <h3>🔗 我的拍摄清单 (<span id="bindings-count">0</span>)</h3>
+                <div id="bindings-list"></div>
+            </div>
+
+            <div class="cart-actions">
+                <button class="btn-primary btn-large" onclick="goToStage('stage-result')">
+                    ✨ 一键生成我的毕业企划
+                </button>
+            </div>
         </div>
     </div>
 
@@ -224,8 +332,11 @@
     <div id="stage-result" class="stage">
         <div class="result-header">
             <button class="btn-back" onclick="goToStage('stage-cart')">← 返回购物车</button>
-            <h2>🎉 你的毕业企划</h2>
-            <span></span>
+            <h2>🎉 我的毕业企划书</h2>
+            <div class="result-header-actions">
+                <button class="btn-text" onclick="savePlan()">💾</button>
+                <button class="btn-text" onclick="sharePlan()">📤</button>
+            </div>
         </div>
 
         <div class="result-section">
@@ -253,6 +364,8 @@
     <!-- Toast 提示 -->
     <div id="toast" class="toast"></div>
 
+    <!-- 脚本加载 -->
+    <script src="js/config.js"></script>
     <script src="js/data.js"></script>
     <script src="js/cart.js"></script>
     <script src="js/chat.js"></script>

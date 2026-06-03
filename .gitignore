@@ -1,0 +1,46 @@
+# ===== API 密钥与本地配置 =====
+# 本地配置文件包含真实 API 密钥，禁止提交
+js/config.local.js
+*.env
+.env.local
+.env.*.local
+
+# ===== 媒体资源（图片和视频太大，本地存放） =====
+# 视频文件
+*.mp4
+*.mov
+*.avi
+
+# 图片文件（大文件）
+assets/images/cover/*.jpg
+assets/images/cover/*.png
+assets/images/landmarks/*.jpg
+assets/images/landmarks/*.png
+assets/images/poses/**/*.jpg
+assets/images/poses/**/*.png
+assets/images/logo/*.png
+assets/images/logo/*.svg
+
+# 保留目录结构和说明文件
+!assets/images/**/.gitkeep
+!assets/images/**/README.txt
+
+# ===== 依赖 =====
+node_modules/
+package-lock.json
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 构建产物 =====
+dist/
+build/

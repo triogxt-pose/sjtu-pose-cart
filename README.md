@@ -50,6 +50,19 @@
 └── README.md
 ```
 
+## 部署到 GitHub Pages
+
+1. Fork/上传本项目到你的 GitHub 仓库
+2. 进入 Settings → Pages
+3. Source 选择 `main` 分支，目录选择 `/ (root)`
+4. 保存后等待几分钟即可通过 `https://你的用户名.github.io/仓库名/` 访问
+
+## 待完成事项
+
+- [ ] 上传校园景点照片到 `assets/images/landmarks/`
+- [ ] 上传姿势训练照片到 `assets/images/poses/`
+- [ ] 配置LLM API密钥（chat.js 中的 LLM_CONFIG）
+- [ ] 为老照片姿势提取MediaPipe骨骼数据
 
 ## 参考代码
 

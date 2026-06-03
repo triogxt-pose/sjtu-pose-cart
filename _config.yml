@@ -1,13 +1,6 @@
-# 交大毕业照购物车 GitHub Pages 配置文件
-# 此项目为纯静态网站，无需 Jekyll 处理
+# 交大毕业照购物车 - 纯静态网站
+# 此文件仅为提供网站元信息，不会被 Jekyll 处理（因为有 .nojekyll）
 
-# 排除不需要的文件
-exclude:
-  - README.md
-  - assets/images/landmarks/README.txt
-  - assets/images/poses/README.txt
-
-# GitHub Pages 设置
 title: 交大毕业照购物车
 description: 为你的毕业季策划一场完美的拍摄之旅
 lang: zh-CN

@@ -1,350 +1,725 @@
 // ===== 主应用逻辑 =====
+// 页面路由、全局状态、初始化
 
-// 阶段切换
-function goToStage(stageId) {
-    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
-    const stage = document.getElementById(stageId);
-    if (stage) {
-        stage.classList.add('active');
+(function () {
+    'use strict';
+
+    let currentStage = 'stage-cover';
+    let currentFilter = 'all';
+
+    // ===== 页面路由 =====
+    function goToStage(stageId) {
+        document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+        const target = document.getElementById(stageId);
+        if (target) {
+            target.classList.add('active');
+            currentStage = stageId;
+        }
+
+        switch (stageId) {
+            case 'stage-shop':
+                renderShop();
+                break;
+            case 'stage-cart':
+                renderCart();
+                break;
+            case 'stage-result':
+                renderResult();
+                break;
+        }
+
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        
-        // 进入特定阶段时的初始化
-        if (stageId === 'stage-shop') {
-            renderRecommendations();
-        } else if (stageId === 'stage-cart') {
-            renderCartPage();
-        } else if (stageId === 'stage-result') {
-            renderResultPage();
+    }
+
+    // ===== 初始化 =====
+    function init() {
+        initCart();
+        initChat();
+        initCover();
+        updateCartBadge();
+    }
+
+    // ===== 封面页 =====
+    function initCover() {
+        initCoverVideo();
+        initCoverCarousel();
+        initParticles();
+        initLoadingAnimation();
+    }
+
+    // 视频背景
+    const coverVideos = ['assets/images/cover/siyuan_lake.mp4', 'assets/images/cover/temple_gate.mp4', 'assets/images/cover/triumphal_arch.mp4'];
+
+    function initCoverVideo() {
+        const video = document.getElementById('cover-bg-video');
+        const fallback = document.querySelector('.cover-bg-fallback');
+        if (!video) return;
+
+        // 检测视频是否可播放
+        video.addEventListener('loadeddata', () => {
+            video.style.opacity = '1';
+        });
+
+        video.addEventListener('error', () => {
+            if (fallback) fallback.classList.add('show');
+            video.style.display = 'none';
+        });
+
+        // 超时3秒后显示降级背景
+        setTimeout(() => {
+            if (video.readyState < 2) {
+                if (fallback) fallback.classList.add('show');
+                video.style.display = 'none';
+            }
+        }, 3000);
+
+        video.style.opacity = '0';
+        video.style.transition = 'opacity 1.5s ease';
+        video.play().catch(() => {
+            if (fallback) fallback.classList.add('show');
+        });
+    }
+
+    // 封面轮播（降级）
+    let carouselTimer = null;
+    const carouselImages = [
+        'assets/images/cover/siyuan_lake.jpg',
+        'assets/images/cover/temple_gate.jpg',
+        'assets/images/cover/triumphal_arch.jpg'
+    ];
+
+    function initCoverCarousel() {
+        const slides = document.querySelectorAll('.cover-bg-slide');
+        if (slides.length === 0) return;
+
+        let idx = 0;
+        function showSlide() {
+            slides.forEach(s => s.classList.remove('active'));
+            const img = new Image();
+            img.onload = () => {
+                slides[idx].style.backgroundImage = `url(${carouselImages[idx]})`;
+                slides[idx].classList.add('active');
+                idx = (idx + 1) % carouselImages.length;
+            };
+            img.onerror = () => {
+                idx = (idx + 1) % carouselImages.length;
+            };
+            img.src = carouselImages[idx];
+        }
+
+        showSlide();
+        carouselTimer = setInterval(showSlide, 5000);
+    }
+
+    // 光斑粒子
+    function initParticles() {
+        const container = document.getElementById('cover-particles');
+        if (!container) return;
+
+        for (let i = 0; i < 35; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'cover-particle';
+            particle.style.left = `${Math.random() * 100}%`;
+            particle.style.top = `${60 + Math.random() * 40}%`;
+            particle.style.animationDelay = `${Math.random() * 8}s`;
+            particle.style.animationDuration = `${5 + Math.random() * 6}s`;
+            const size = 2 + Math.random() * 8;
+            particle.style.width = particle.style.height = `${size}px`;
+            particle.style.opacity = `${0.1 + Math.random() * 0.3}`;
+            container.appendChild(particle);
         }
     }
-}
 
-// 切换商店底部Tab
-function switchShopTab(tab) {
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
-    
-    if (tab === 'recommend') {
-        document.querySelector('.recommend-section').style.display = '';
-        document.querySelector('.chat-section').style.display = '';
-    } else if (tab === 'locations') {
-        showAllLocations();
-    } else if (tab === 'poses') {
+    // 校徽 Loading 动画
+    function initLoadingAnimation() {
+        const overlay = document.getElementById('loading-overlay');
+        if (!overlay) return;
+
+        const circle = document.getElementById('loading-circle');
+        const loadingText = document.getElementById('loading-text');
+        const circumference = 283;
+
+        const messages = [
+            '正在准备你的毕业企划...',
+            '调取交大校园地图...',
+            '加载经典拍摄姿势...',
+            'AI 策划师已就位...',
+            '正在连接思源湖信号...',
+            '整理宣怀大道拍摄点...'
+        ];
+
+        let progress = 0;
+        let msgIdx = 0;
+        const msgInterval = setInterval(() => {
+            if (loadingText) {
+                loadingText.textContent = messages[msgIdx % messages.length];
+                msgIdx++;
+            }
+        }, 1400);
+
+        const loadInterval = setInterval(() => {
+            progress += Math.random() * 25;
+            if (progress >= 100) {
+                progress = 100;
+                clearInterval(loadInterval);
+                clearInterval(msgInterval);
+                if (loadingText) loadingText.textContent = '一切就绪，开启你的毕业之旅吧！';
+                if (circle) circle.style.strokeDashoffset = 0;
+
+                setTimeout(() => {
+                    overlay.style.opacity = '0';
+                    overlay.style.transition = 'opacity 0.6s ease';
+                    setTimeout(() => {
+                        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                    }, 600);
+                }, 600);
+            }
+            if (circle) {
+                const offset = circumference - (progress / 100) * circumference;
+                circle.style.strokeDashoffset = offset;
+            }
+        }, 80);
+    }
+
+    // 开始使用
+    function startJourney() {
+        // 停止轮播
+        if (carouselTimer) clearInterval(carouselTimer);
+        // 暂停视频以节省资源
+        const video = document.getElementById('cover-bg-video');
+        if (video) video.pause();
+        goToStage('stage-shop');
+    }
+
+    // ===== 主工作台 =====
+    function renderShop() {
+        renderRecommendations();
+        renderVintageSection();
+        updateCartBadge();
+    }
+
+    // 筛选
+    function applyFilter(filter, el) {
+        currentFilter = filter;
+        document.querySelectorAll('#filter-bar .filter-chip').forEach(c => c.classList.remove('active'));
+        if (el) el.classList.add('active');
+        renderRecommendations();
+    }
+
+    // 推荐渲染
+    function renderRecommendations() {
+        // 地点瀑布流
+        const locContainer = document.getElementById('location-waterfall');
+        if (locContainer) {
+            const shuffled = [...LOCATIONS].sort(() => Math.random() - 0.5).slice(0, 4);
+            locContainer.innerHTML = shuffled.map(l => `
+                <div class="rec-card">
+                    <div class="rec-card-img" style="background:linear-gradient(135deg,var(--primary-light),var(--primary));">
+                        <span class="rec-card-emoji">${l.emoji}</span>
+                    </div>
+                    <div class="rec-card-body">
+                        <div class="rec-card-title">${l.name}</div>
+                        <div class="rec-card-meta">${l.desc}</div>
+                        <button class="rec-card-btn" onclick="addToCart('location',{id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">🛒 加入购物车</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 姿势瀑布流
+        const poseContainer = document.getElementById('pose-waterfall');
+        if (poseContainer) {
+            let poses = [...POSES];
+            if (currentFilter !== 'all') {
+                poses = poses.filter(p => p.people === currentFilter);
+            }
+            const shuffled = poses.sort(() => Math.random() - 0.5).slice(0, 4);
+            poseContainer.innerHTML = shuffled.map(p => `
+                <div class="rec-card">
+                    <div class="rec-card-img" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));">
+                        <span class="rec-card-emoji">${p.emoji}</span>
+                        ${p.hasSkeleton ? '<span class="vintage-tag">AI比对</span>' : ''}
+                    </div>
+                    <div class="rec-card-body">
+                        <div class="rec-card-title">${p.name}</div>
+                        <div class="rec-card-meta">${p.people}人 · ${p.style}</div>
+                        <button class="rec-card-btn" onclick="addToCart('pose',{id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">🛒 加入购物车</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+
+    // 经典照片复刻专区
+    function renderVintageSection() {
+        const container = document.getElementById('vintage-cards');
+        if (!container) return;
+
+        const vintagePoses = POSES.filter(p => p.hasSkeleton);
+        container.innerHTML = vintagePoses.map(p => `
+            <div class="rec-card">
+                <div class="rec-card-img" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));">
+                    <span class="rec-card-emoji">${p.emoji}</span>
+                    <span class="vintage-tag">AI比对</span>
+                </div>
+                <div class="rec-card-body">
+                    <div class="rec-card-title">${p.name}</div>
+                    <div class="rec-card-meta">${p.people}人 · ${p.desc}</div>
+                    <button class="rec-card-btn" onclick="addToCart('pose',{id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:true});updateCartBadge();">🛒 加入购物车</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function showAllVintagePoses() {
         showAllPoses();
+        applyModalFilter('经典照片', document.querySelector('[data-modal-filter="经典照片"]'));
     }
-}
 
-// ===== 推荐板块渲染 =====
-function renderRecommendations() {
-    renderLocationCards(LOCATIONS.slice(0, 4));
-    renderPoseCards(POSES.slice(0, 6));
-}
+    // ===== 弹窗：地点库 =====
+    function showAllLocations() {
+        const container = document.getElementById('all-locations-grid');
+        if (!container) return;
 
-function renderLocationCards(locations) {
-    const container = document.getElementById('location-cards');
-    if (!container) return;
-    container.innerHTML = locations.map(l => `
-        <div class="card-item">
-            <div class="card-img">${l.emoji}</div>
-            <div class="card-name">${l.name}</div>
-            <div class="card-meta">${l.desc}</div>
-            <div class="card-meta" style="font-size:11px;">🕐 ${l.bestTime}</div>
-            <button class="card-add-btn" onclick="addToCart('location', {id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">
-                🛒 加入购物车
-            </button>
-        </div>
-    `).join('');
-}
+        container.innerHTML = LOCATIONS.map(l => `
+            <div class="rec-card">
+                <div class="rec-card-img" style="background:linear-gradient(135deg,var(--primary-light),var(--primary));">
+                    <span class="rec-card-emoji">${l.emoji}</span>
+                </div>
+                <div class="rec-card-body">
+                    <div class="rec-card-title">${l.name}</div>
+                    <div class="rec-card-meta">${l.desc} · ${l.bestTime}</div>
+                    <button class="rec-card-btn" onclick="addToCart('location',{id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();closeModal('modal-locations');">🛒 加入购物车</button>
+                </div>
+            </div>
+        `).join('');
 
-function renderPoseCards(poses) {
-    const container = document.getElementById('pose-cards');
-    if (!container) return;
-    container.innerHTML = poses.map(p => `
-        <div class="card-item">
-            <div class="card-img">${p.emoji}</div>
-            <div class="card-name">${p.name}</div>
-            <div class="card-meta">👥 ${p.people}人 · ${p.style}</div>
-            <button class="card-add-btn" onclick="addToCart('pose', {id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">
-                🛒 加入购物车
-            </button>
-        </div>
-    `).join('');
-}
+        openModal('modal-locations');
+    }
 
-// 查看全部地点
-function showAllLocations() {
-    const grid = document.getElementById('all-locations-grid');
-    if (grid) {
-        grid.innerHTML = LOCATIONS.map(l => `
-            <div class="card-item" style="min-width:auto;max-width:100%;">
-                <div class="card-img" style="height:60px;">${l.emoji}</div>
-                <div class="card-name">${l.name}</div>
-                <div class="card-meta">${l.desc}</div>
-                <div class="card-meta">🕐 ${l.bestTime}</div>
-                <button class="card-add-btn" onclick="addToCart('location', {id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">
-                    🛒 加入购物车
-                </button>
+    // ===== 弹窗：姿势库 =====
+    function showAllPoses() {
+        renderModalPoses('all');
+        openModal('modal-poses');
+    }
+
+    function renderModalPoses(filter) {
+        const container = document.getElementById('all-poses-grid');
+        if (!container) return;
+
+        let poses = [...POSES];
+        if (filter !== 'all') {
+            if (filter === '经典照片') {
+                poses = poses.filter(p => p.hasSkeleton);
+            } else {
+                poses = poses.filter(p => p.people === filter);
+            }
+        }
+
+        container.innerHTML = poses.map(p => `
+            <div class="rec-card">
+                <div class="rec-card-img" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));">
+                    <span class="rec-card-emoji">${p.emoji}</span>
+                    ${p.hasSkeleton ? '<span class="vintage-tag">AI比对</span>' : ''}
+                </div>
+                <div class="rec-card-body">
+                    <div class="rec-card-title">${p.name}</div>
+                    <div class="rec-card-meta">${p.people}人 · ${p.style}</div>
+                    <button class="rec-card-btn" onclick="addToCart('pose',{id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">🛒 加入购物车</button>
+                </div>
             </div>
         `).join('');
     }
-    document.getElementById('modal-locations').classList.add('show');
-}
 
-// 查看全部姿势
-function showAllPoses() {
-    renderAllPoses(POSES);
-    document.getElementById('modal-poses').classList.add('show');
-}
-
-function renderAllPoses(poses) {
-    const grid = document.getElementById('all-poses-grid');
-    if (grid) {
-        grid.innerHTML = poses.map(p => `
-            <div class="card-item" style="min-width:auto;max-width:100%;">
-                <div class="card-img" style="height:60px;">${p.emoji}</div>
-                <div class="card-name">${p.name}</div>
-                <div class="card-meta">👥 ${p.people}人 · ${p.style}</div>
-                <button class="card-add-btn" onclick="addToCart('pose', {id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">
-                    🛒 加入购物车
-                </button>
-            </div>
-        `).join('');
+    function applyModalFilter(filter, el) {
+        document.querySelectorAll('#modal-poses .filter-chip').forEach(c => c.classList.remove('active'));
+        if (el) el.classList.add('active');
+        renderModalPoses(filter);
     }
-}
 
-// 姿势筛选
-function filterPoses() {
-    const people = document.getElementById('filter-people').value;
-    const style = document.getElementById('filter-style').value;
-    let filtered = POSES;
-    if (people) filtered = filtered.filter(p => p.people === people);
-    if (style) filtered = filtered.filter(p => p.style === style);
-    renderPoseCards(filtered.slice(0, 6));
-}
-
-function filterModalPoses() {
-    const people = document.getElementById('modal-filter-people').value;
-    const style = document.getElementById('modal-filter-style').value;
-    let filtered = POSES;
-    if (people) filtered = filtered.filter(p => p.people === people);
-    if (style) filtered = filtered.filter(p => p.style === style);
-    renderAllPoses(filtered);
-}
-
-// 关闭弹窗
-function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('show');
-}
-
-// 点击弹窗背景关闭
-document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal')) {
-        e.target.classList.remove('show');
+    // ===== 弹窗管理 =====
+    function openModal(id) {
+        const modal = document.getElementById(id);
+        if (modal) modal.classList.add('show');
     }
-});
 
-// ===== 阶段四：交付页 =====
-function renderResultPage() {
-    renderCopySection();
-    renderRouteSection();
-    renderGuideSection();
-}
+    function closeModal(id) {
+        const modal = document.getElementById(id);
+        if (modal) modal.classList.remove('show');
+    }
 
-// AI 朋友圈文案 (参考 LLM 调用模式)
-function renderCopySection() {
-    const container = document.getElementById('result-copy');
-    if (!container) return;
+    // ===== 购物车页 =====
+    function renderCart() {
+        const cartEmpty = document.getElementById('cart-empty');
+        const cartContent = document.getElementById('cart-content');
+        const total = cartItems.locations.length + cartItems.poses.length;
 
-    const year = new Date().getFullYear();
-    const date = `${new Date().getFullYear()}年${new Date().getMonth() + 1}月${new Date().getDate()}日`;
+        if (cartEmpty && cartContent) {
+            cartEmpty.style.display = total === 0 ? 'block' : 'none';
+            cartContent.style.display = total > 0 ? 'block' : 'none';
+        }
 
-    let copies = [];
+        // 更新摘要
+        const locCountEl = document.getElementById('cart-location-count');
+        const poseCountEl = document.getElementById('cart-pose-count');
+        if (locCountEl) locCountEl.textContent = cartItems.locations.length;
+        if (poseCountEl) poseCountEl.textContent = cartItems.poses.length;
 
-    // 根据用户选择的风格生成文案
-    const selectedStyles = [...new Set(cart.poses.map(p => {
-        const pose = POSES.find(pp => pp.id === p.id);
-        return pose ? pose.style : '';
-    }).filter(Boolean))];
+        // 渲染地点列表
+        const locList = document.getElementById('cart-locations-list');
+        const poseList = document.getElementById('cart-poses-list');
+        const locColCount = document.getElementById('loc-col-count');
+        const poseColCount = document.getElementById('pose-col-count');
 
-    if (selectedStyles.includes('搞笑') || selectedStyles.includes('活泼')) {
-        copies.push({
-            style: '🎭 搞怪风',
-            text: '🎓 顺利毕业！\n感谢室友不杀之恩\n感谢食堂阿姨的手抖\n感谢交大让我遇见你们\n\nSJTUers，江湖再见！👋'
+        if (locList) {
+            locList.innerHTML = cartItems.locations.map(l => `
+                <div class="cart-item"
+                     draggable="true"
+                     data-type="location"
+                     data-id="${l.id}"
+                     data-name="${l.name}"
+                     ondragstart="cartDragStart(event)"
+                     ondragover="cartDragOver(event)"
+                     ondragleave="cartDragLeave(event)"
+                     ondrop="cartDrop(event)">
+                    <span class="cart-item-check" onclick="event.stopPropagation();toggleCartCheck(this)">☐</span>
+                    <span class="cart-item-emoji">${l.emoji || '🏛️'}</span>
+                    <span class="cart-item-name">${l.name}</span>
+                    <span class="cart-item-delete" onclick="removeFromCart('location','${l.id}')">🗑️</span>
+                </div>
+            `).join('');
+            if (locColCount) locColCount.textContent = cartItems.locations.length;
+        }
+
+        if (poseList) {
+            poseList.innerHTML = cartItems.poses.map(p => `
+                <div class="cart-item"
+                     draggable="true"
+                     data-type="pose"
+                     data-id="${p.id}"
+                     data-name="${p.name}"
+                     ondragstart="cartDragStart(event)"
+                     ondragover="cartDragOver(event)"
+                     ondragleave="cartDragLeave(event)"
+                     ondrop="cartDrop(event)">
+                    <span class="cart-item-check" onclick="event.stopPropagation();toggleCartCheck(this)">☐</span>
+                    <span class="cart-item-emoji">${p.emoji || '🕺'}</span>
+                    <span class="cart-item-name">${p.name}</span>
+                    <span class="cart-item-delete" onclick="removeFromCart('pose','${p.id}')">🗑️</span>
+                </div>
+            `).join('');
+            if (poseColCount) poseColCount.textContent = cartItems.poses.length;
+        }
+
+        // 渲染绑定列表
+        const bindingList = document.getElementById('bindings-list');
+        const bindingCount = document.getElementById('bindings-count');
+        if (bindingList) {
+            const bindings = [];
+            Object.entries(cartBindings).forEach(([locId, poseIds]) => {
+                const loc = cartItems.locations.find(l => l.id === locId);
+                poseIds.forEach(pid => {
+                    const pose = cartItems.poses.find(p => p.id === pid);
+                    if (loc && pose) {
+                        bindings.push({ locId, poseId: pid, locName: loc.name, poseName: pose.name });
+                    }
+                });
+            });
+            bindingList.innerHTML = bindings.map(b => `
+                <div class="binding-item">
+                    <span>📍 ${b.locName}</span>
+                    <span class="bind-arrow">→</span>
+                    <span>🕺 ${b.poseName}</span>
+                    <span class="bind-remove" onclick="unbindCartItem('${b.locId}','${b.poseId}')">✕</span>
+                </div>
+            `).join('');
+            if (bindingCount) bindingCount.textContent = bindings.length;
+        }
+
+        updateCartBadge();
+    }
+
+    // 随机组合
+    function randomCombine() {
+        randomBind();
+        renderCart();
+    }
+
+    // AI 智能组合
+    function aiAutoBind() {
+        randomBind();
+        renderCart();
+        showToast('AI 智能组合完成！');
+    }
+
+    // 清除所有绑定
+    function clearAllBindings() {
+        cartBindings = {};
+        saveCart();
+        renderCart();
+        showToast('已清除所有绑定');
+    }
+
+    // ===== 订单交付页 =====
+    function renderResult() {
+        const cartData = getCartData();
+        const boundLocs = getBoundLocations();
+
+        // 如果没有绑定，自动随机组合
+        if (boundLocs.length === 0 && cartData.locations.length > 0 && cartData.poses.length > 0) {
+            randomBind();
+            renderCart();
+            return renderResult();
+        }
+
+        if (cartData.locations.length === 0) {
+            showToast('请先添加拍摄地点');
+            goToStage('stage-cart');
+            return;
+        }
+
+        const locations = boundLocs.length > 0 ? boundLocs : cartData.locations.map(l => ({ ...l, poses: [] }));
+        const allPoses = cartData.poses;
+
+        renderRouteMap(locations);
+        renderPoseGuide(locations, allPoses);
+        renderAICopy(locations, allPoses);
+    }
+
+    // 智能路线图
+    function renderRouteMap(locations) {
+        const container = document.getElementById('result-route');
+        if (!container) return;
+
+        const sorted = [...locations].sort((a, b) => {
+            const idxA = OPTIMAL_ROUTE_ORDER.indexOf(a.name);
+            const idxB = OPTIMAL_ROUTE_ORDER.indexOf(b.name);
+            return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
         });
-    }
 
-    if (selectedStyles.includes('老照片') || selectedStyles.includes('复古')) {
-        copies.push({
-            style: '📷 复古风',
-            text: `从南洋公学到上海交大\n百廿余年，弦歌不辍\n今日我们在此定格\n续写属于这个时代的篇章\n\n${date} 摄于交大校园`
+        let totalTime = 0;
+        let html = '';
+        sorted.forEach((loc, i) => {
+            const stayTime = LOCATIONS.find(l => l.name === loc.name)?.stayTime || 20;
+            totalTime += stayTime;
+            html += `
+                <div class="route-step">
+                    <div class="route-num">${i + 1}</div>
+                    <div class="route-content">
+                        <div class="route-location-name">${loc.emoji || '🏛️'} ${loc.name}</div>
+                        <div class="route-time">⏱ 预计停留 ${stayTime} 分钟</div>
+                        <div class="route-pose-name">
+                            ${(loc.poses || []).map(p => `${p.emoji || '🕺'} ${p.name}`).join(' · ')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            if (i < sorted.length - 1) {
+                html += '<div class="route-line"></div>';
+            }
         });
-    }
 
-    // 深情风（默认必有）
-    copies.push({
-        style: '💌 深情风',
-        text: `在思源湖畔的晚风里\n在东川路的梧桐树下\n我们用四年的时光\n写下了最好的青春\n\n毕业快乐 | SJTU ${year}`
-    });
-
-    container.innerHTML = copies.map((c, i) => `
-        <div class="result-copy-item">
-            <strong>${c.style}</strong>
-            <pre style="margin:8px 0 0;font-family:inherit;white-space:pre-wrap;">${c.text}</pre>
-            <button class="copy-btn" onclick="copyText('${c.text.replace(/'/g, "\\'").replace(/\n/g, '\\n')}')">📋 一键复制</button>
-        </div>
-    `).join('');
-}
-
-// 智能路线图 (最短路径贪心算法)
-function renderRouteSection() {
-    const container = document.getElementById('result-route');
-    if (!container) return;
-
-    const locations = cart.bindings.length > 0
-        ? cart.bindings.map(b => ({
-            name: b.locationName,
-            pose: b.poseName
-        }))
-        : cart.locations.map(l => ({ name: l.name, pose: '' }));
-
-    if (locations.length === 0) {
-        container.innerHTML = '<p style="color:#999;">请先在购物车中添加拍摄地点</p>';
-        return;
-    }
-
-    // 简单路线规划：按照校园最优游览顺序排列
-    const OPTIMAL_ORDER = ['东大门', '凯旋门', '中院', '宣怀大道', '包玉刚图书馆', '新行政楼', '仰思坪', '蔷薇园', '思源湖', '电院大草坪'];
-    
-    locations.sort((a, b) => {
-        const idxA = OPTIMAL_ORDER.indexOf(a.name);
-        const idxB = OPTIMAL_ORDER.indexOf(b.name);
-        return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
-    });
-
-    container.innerHTML = locations.map((loc, i) => `
-        <div class="route-step">
-            <div class="route-num">${i + 1}</div>
-            <div class="route-info">
-                <strong>${loc.name}</strong>
-                ${loc.pose ? `<br><span style="color:#e74c3c;">📸 ${loc.pose}</span>` : ''}
-            </div>
-        </div>
-        ${i < locations.length - 1 ? '<div class="route-line"></div>' : ''}
-    `).join('');
-
-    // 添加预估时间
-    const totalMin = locations.length * 20 + (locations.length - 1) * 10;
-    container.innerHTML += `
-        <div style="margin-top:12px;padding:12px;background:#fff5e6;border-radius:8px;font-size:13px;">
-            🕐 预计总时长：<strong>约 ${totalMin} 分钟</strong>（含拍摄和路程时间）
-        </div>
-    `;
-}
-
-// 地点×姿势说明书 (MediaPipe 辅助拍摄入口)
-function renderGuideSection() {
-    const container = document.getElementById('result-guide');
-    if (!container) return;
-
-    const items = cart.bindings.length > 0 ? cart.bindings : 
-        cart.locations.map(l => ({
-            locationName: l.name,
-            locationId: l.id,
-            poseName: cart.poses[0]?.name || '自由发挥',
-            poseId: cart.poses[0]?.id || ''
-        }));
-
-    if (items.length === 0) {
-        container.innerHTML = '<p style="color:#999;">请先在购物车中添加拍摄项目</p>';
-        return;
-    }
-
-    container.innerHTML = items.map(item => {
-        const loc = LOCATIONS.find(l => l.id === item.locationId);
-        const pose = POSES.find(p => p.id === item.poseId);
-        return `
-            <div class="result-guide-card">
-                <div class="guide-header">
-                    <span class="guide-emoji">${loc ? loc.emoji : '📍'}</span>
-                    <span class="guide-title">${item.locationName}</span>
-                    <span style="font-size:20px;">×</span>
-                    <span class="guide-emoji">${pose ? pose.emoji : '🕺'}</span>
-                    <span class="guide-title">${item.poseName}</span>
-                </div>
-                <div class="guide-body">
-                    ${loc ? `<p>📍 ${loc.desc} · 🕐 最佳时间：${loc.bestTime}</p>` : ''}
-                    ${pose ? `<p>🕺 ${pose.desc} · 👥 ${pose.people}人</p>` : ''}
-                </div>
-                <div class="guide-action">
-                    <button onclick="openMediaPipeForPose('${item.poseId}')">
-                        📸 开启辅助拍摄模式
-                    </button>
-                </div>
+        html += `
+            <div class="route-total-time">
+                📍 共 ${sorted.length} 个地点 · 预计总时长约 ${totalTime} 分钟
             </div>
         `;
-    }).join('');
-}
 
-function openMediaPipeForPose(poseId) {
-    setTargetPose(poseId);
-    openMediaPipe();
-}
-
-// 复制文案
-function copyText(text) {
-    const cleanText = text.replace(/\\n/g, '\n');
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(cleanText).then(() => {
-            showToast('文案已复制到剪贴板');
-        });
-    } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = cleanText;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        showToast('文案已复制到剪贴板');
+        container.innerHTML = html;
     }
-}
 
-// 保存企划
-function savePlan() {
-    const planData = {
-        cart: cart,
-        date: new Date().toISOString(),
-        version: '1.0'
-    };
-    const blob = new Blob([JSON.stringify(planData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = '交大毕业照企划_' + new Date().toISOString().slice(0, 10) + '.json';
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast('企划已保存到本地');
-}
+    // 姿势说明书
+    function renderPoseGuide(locations, allPoses) {
+        const container = document.getElementById('result-guide');
+        if (!container) return;
 
-// 分享企划
-function sharePlan() {
-    if (navigator.share) {
-        navigator.share({
-            title: '我的交大毕业照企划',
-            text: `我策划了一份交大毕业照拍摄方案，包含${cart.locations.length}个地点和${cart.poses.length}种姿势！`,
-        }).catch(() => {});
-    } else {
-        copyText(`我策划了一份交大毕业照拍摄方案！\n📍 地点：${cart.locations.map(l => l.name).join('、')}\n🕺 姿势：${cart.poses.map(p => p.name).join('、')}\n快来一起拍毕业照吧！`);
-        showToast('分享文案已复制，可以粘贴到微信/朋友圈');
+        container.innerHTML = locations.map((loc, i) => {
+            const poses = (loc.poses && loc.poses.length > 0) ? loc.poses : allPoses.slice(0, 2);
+            return `
+                <div class="guide-card ${i === 0 ? 'expanded' : ''}" onclick="this.classList.toggle('expanded')">
+                    <div class="guide-card-header">
+                        <span class="guide-emoji">${loc.emoji || '🏛️'}</span>
+                        <div class="guide-info">
+                            <div class="guide-title">${loc.name}</div>
+                            <div class="guide-subtitle">${poses.length} 个建议姿势</div>
+                        </div>
+                        <span class="guide-expand">▼</span>
+                    </div>
+                    <div class="guide-card-body">
+                        <div class="guide-poses">
+                            ${poses.map(p => `<span class="guide-pose-tag">${p.emoji || '🕺'} ${p.name}</span>`).join('')}
+                        </div>
+                        ${poses.some(p => p.hasSkeleton) ? `
+                            <button class="guide-action-btn" onclick="startMediaPipe('${poses.find(p => p.hasSkeleton)?.id}')">
+                                📷 开启AI姿势比对
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
-}
 
-// ===== 初始化 =====
-function init() {
-    loadCart();
-    updateCartBadge();
-    initChat();
-    renderRecommendations();
-}
+    // AI 朋友圈文案
+    async function renderAICopy(locations, allPoses) {
+        const container = document.getElementById('result-copy');
+        if (!container) return;
 
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', init);
+        const remoteCopy = await generateAICopyText(locations, allPoses);
+
+        if (remoteCopy) {
+            const parts = remoteCopy.split(/\n(?=💌|🎭|📋)/);
+            container.innerHTML = parts.map(part => {
+                const lines = part.trim().split('\n');
+                const style = lines[0] || '';
+                const text = lines.slice(1).join('\n') || part;
+                return `
+                    <div class="result-copy-item">
+                        <div class="copy-style">${style}</div>
+                        <div class="copy-text">${text}</div>
+                        <button class="copy-btn" onclick="copyText('${escapeForCopy(text)}')">📋 复制</button>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            const styles = ['深情', '搞怪', '正经'];
+            const year = new Date().getFullYear();
+            const date = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+            const locNames = locations.map(l => l.name || l.locationName).join('、');
+
+            container.innerHTML = styles.map(key => {
+                const templates = COPY_TEMPLATES[key];
+                const tpl = templates[Math.floor(Math.random() * templates.length)];
+                const text = tpl.text
+                    .replace('{year}', year)
+                    .replace('{date}', date)
+                    .replace('{locations}', locNames);
+                return `
+                    <div class="result-copy-item">
+                        <div class="copy-style">${tpl.style}</div>
+                        <div class="copy-text">${text}</div>
+                        <button class="copy-btn" onclick="copyText('${escapeForCopy(text)}')">📋 复制</button>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    // 安全转义文案中的特殊字符
+    function escapeForCopy(text) {
+        return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    }
+
+    // 复制文案
+    function copyText(text) {
+        const decoded = text.replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(decoded).then(() => showToast('已复制到剪贴板'));
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = decoded;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast('已复制到剪贴板');
+            } catch (e) {
+                showToast('复制失败，请手动选择文本');
+            }
+            document.body.removeChild(textarea);
+        }
+    }
+
+    // 保存/分享企划
+    function savePlan() {
+        showToast('企划已保存！');
+    }
+
+    function sharePlan() {
+        if (navigator.share) {
+            navigator.share({
+                title: '我的交大毕业照企划',
+                text: '来看看我的毕业照拍摄方案！',
+                url: window.location.href
+            }).catch(() => {});
+        } else {
+            copyText('来看看我的交大毕业照拍摄方案！' + window.location.href);
+            showToast('链接已复制，分享给同学吧～');
+        }
+    }
+
+    // ===== MediaPipe =====
+    function startMediaPipe(poseId) {
+        const pose = POSES.find(p => p.id === poseId);
+        if (!pose) return;
+        openMediaPipe(pose);
+    }
+
+    function openMediaPipe(pose) {
+        const modal = document.getElementById('modal-mediapipe');
+        if (!modal) return;
+
+        modal.classList.add('show');
+        const thumb = document.getElementById('pose-thumbnail');
+        if (thumb) {
+            thumb.innerHTML = `<span style="font-size:32px;">${pose.emoji || '🕺'}</span><span style="font-size:10px;">${pose.name}</span>`;
+        }
+        initMediaPipeCamera(pose);
+    }
+
+    function closeMediaPipe() {
+        stopCamera();
+        const modal = document.getElementById('modal-mediapipe');
+        if (modal) modal.classList.remove('show');
+    }
+
+    function switchTargetPose() {
+        // 循环切换经典照片姿势
+        const vintagePoses = POSES.filter(p => p.hasSkeleton);
+        if (vintagePoses.length === 0) return;
+        stopCamera();
+        const currentId = currentPose?.id;
+        const idx = vintagePoses.findIndex(p => p.id === currentId);
+        const next = vintagePoses[(idx + 1) % vintagePoses.length];
+        openMediaPipe(next);
+    }
+
+    // ===== Toast =====
+    let toastTimer = null;
+    function showToast(msg) {
+        const el = document.getElementById('toast');
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), APP_CONFIG.toastDuration || 2000);
+    }
+
+    // ===== 导出 =====
+    window.goToStage = goToStage;
+    window.startJourney = startJourney;
+    window.applyFilter = applyFilter;
+    window.applyModalFilter = applyModalFilter;
+    window.showAllLocations = showAllLocations;
+    window.showAllPoses = showAllPoses;
+    window.showAllVintagePoses = showAllVintagePoses;
+    window.openModal = openModal;
+    window.closeModal = closeModal;
+    window.randomCombine = randomCombine;
+    window.aiAutoBind = aiAutoBind;
+    window.clearAllBindings = clearAllBindings;
+    window.renderCart = renderCart;
+    window.savePlan = savePlan;
+    window.sharePlan = sharePlan;
+    window.startMediaPipe = startMediaPipe;
+    window.openMediaPipe = openMediaPipe;
+    window.closeMediaPipe = closeMediaPipe;
+    window.switchTargetPose = switchTargetPose;
+    window.copyText = copyText;
+    window.showToast = showToast;
+
+    // 启动
+    document.addEventListener('DOMContentLoaded', init);
+})();
