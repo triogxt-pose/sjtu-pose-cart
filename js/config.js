@@ -10,7 +10,7 @@
 const API_CONFIG = {
     // ===== LLM 对话 API（用于 AI 聊天助手） =====
     llm: {
-        enabled: false,              // 是否启用远程 API（false 时使用本地关键词匹配）
+        enabled: true,              // 是否启用远程 API（false 时使用本地关键词匹配）
         apiKey: process.env.API_KEY_LLM || '',
         baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
@@ -31,7 +31,7 @@ const API_CONFIG = {
 
     // ===== 文案生成 API（用于生成朋友圈文案） =====
     copyGen: {
-        enabled: false,              // 是否启用远程 API（false 时使用本地模板）
+        enabled: true,              // 是否启用远程 API（false 时使用本地模板）
         apiKey: process.env.API_KEY_COPYGEN || '',
         baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
