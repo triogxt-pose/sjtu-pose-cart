@@ -19,7 +19,7 @@ const LOCAL_API_CONFIG = {
         apiKey: '你的API密钥',       // 填入你的 API Key
         baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
-        maxTokens: 600,
+        maxTokens: 1000,
         temperature: 0.7
     },
 
@@ -29,7 +29,7 @@ const LOCAL_API_CONFIG = {
         apiKey: '你的API密钥',       // 填入你的 API Key
         baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
-        maxTokens: 500,
+        maxTokens: 1000,
         temperature: 0.85
     },
 

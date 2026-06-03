@@ -11,10 +11,10 @@ const API_CONFIG = {
     // ===== LLM 对话 API（用于 AI 聊天助手） =====
     llm: {
         enabled: false,              // 是否启用远程 API（false 时使用本地关键词匹配）
-        apiKey: '',                  // API 密钥（从 config.local.js 注入）
+        apiKey: process.env.API_KEY_LLM || '',
         baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
-        maxTokens: 600,
+        maxTokens: 1000,
         temperature: 0.7,
         // 系统提示词
         systemPrompt: `你是"交大毕业照购物车"的 AI 导购助手，名叫"小交"。你的角色是：
@@ -32,10 +32,10 @@ const API_CONFIG = {
     // ===== 文案生成 API（用于生成朋友圈文案） =====
     copyGen: {
         enabled: false,              // 是否启用远程 API（false 时使用本地模板）
-        apiKey: '',                  // API 密钥（从 config.local.js 注入）
+        apiKey: process.env.API_KEY_COPYGEN || '',
         baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
-        maxTokens: 500,
+        maxTokens: 1000,
         temperature: 0.85,
         systemPrompt: `你是交大毕业照文案生成器。根据用户选择的地点、姿势和风格，生成 3 段不同风格的朋友圈文案：
 1. 💌 深情风：感性、怀旧、有文学感，适合表达对校园时光的不舍与感恩
