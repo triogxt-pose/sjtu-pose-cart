@@ -16,8 +16,8 @@ const LOCAL_API_CONFIG = {
     // ===== 大语言模型 API =====
     llm: {
         enabled: false,             // 设为 true 启用真实 LLM API
-        apiKey: '你的API密钥',       // 填入你的 API Key
-        baseUrl: 'https://你的API地址/api/v1',
+        apiKey: 'sk-W2fWqhpuiq5MvwSwaauUYg',       // 填入你的 API Key
+        baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
         maxTokens: 1000,
         temperature: 0.7
@@ -26,8 +26,8 @@ const LOCAL_API_CONFIG = {
     // ===== 文案生成 API =====
     copyGen: {
         enabled: false,             // 设为 true 启用远程文案生成
-        apiKey: '你的API密钥',       // 填入你的 API Key
-        baseUrl: 'https://你的API地址/api/v1',
+        apiKey: 'sk-W2fWqhpuiq5MvwSwaauUYg',       // 填入你的 API Key
+        baseUrl: 'https://models.sjtu.edu.cn/api/v1',
         model: 'minimax',
         maxTokens: 1000,
         temperature: 0.85
