@@ -1,20 +1,23 @@
 // =============================================================================
 // API 配置文件
 // =============================================================================
-// 所有 API 密钥集中管理，不裸露在业务代码中
-// 生产环境部署时，通过环境变量或后端接口注入真实的 API 密钥
-// 复制 config.local.example.js 为 config.local.js 并填入真实 API 密钥
-// config.local.js 已在 .gitignore 中排除，不会提交到版本控制
+// 当前模式：Cloudflare Worker 代理（线上部署）
+// API 密钥存储在 Worker 环境变量中，前端不持有任何密钥
+// Worker URL 本身不是秘密，可以安全提交到 GitHub
+//
+// 如需本地开发（直接调用 API 而非通过代理）：
+//   复制 config.local.example.js 为 config.local.js 并填入真实密钥
+//   然后在 index.html 中取消注释 config.local.js 的引用
 // =============================================================================
 
 const API_CONFIG = {
     // ===== LLM 对话 API（用于 AI 聊天助手） =====
     llm: {
-        enabled: false,              // 是否启用远程 API（false 时使用本地关键词匹配）
-        apiKey: '',                  // API 密钥（从 config.local.js 注入）
-        baseUrl: '',                 // API 地址（从 config.local.js 注入）
+        enabled: true,              // 是否启用远程 API（false 时使用本地关键词匹配）
+        // ---- 代理模式：通过 Cloudflare Worker 调用 ----
+        proxyUrl: 'https://sjtu-pose-cart-api.xbbruce2007.workers.dev',
         model: 'minimax',
-        maxTokens: 600,
+        maxTokens: 1000,
         temperature: 0.7,
         // 系统提示词
         systemPrompt: `你是"交大毕业照购物车"的 AI 导购助手，名叫"小交"。你的角色是：
@@ -31,11 +34,10 @@ const API_CONFIG = {
 
     // ===== 文案生成 API（用于生成朋友圈文案） =====
     copyGen: {
-        enabled: false,              // 是否启用远程 API（false 时使用本地模板）
-        apiKey: '',                  // API 密钥（从 config.local.js 注入）
-        baseUrl: '',                 // API 地址（从 config.local.js 注入）
+        enabled: true,              // 是否启用远程 API（false 时使用本地模板）
+        proxyUrl: 'https://sjtu-pose-cart-api.xbbruce2007.workers.dev',
         model: 'minimax',
-        maxTokens: 500,
+        maxTokens: 1000,
         temperature: 0.85,
         systemPrompt: `你是交大毕业照文案生成器。根据用户选择的地点、姿势和风格，生成 3 段不同风格的朋友圈文案：
 1. 💌 深情风：感性、怀旧、有文学感，适合表达对校园时光的不舍与感恩

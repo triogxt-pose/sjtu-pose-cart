@@ -1,0 +1,12 @@
+# Cloudflare Worker 配置
+# 部署命令：wrangler deploy
+
+name = "sjtu-pose-cart-api"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# 免费套餐：每天 10 万次请求，足够使用
+# 如需绑定自定义域名，在 Cloudflare Dashboard 中添加
+
+[observability]
+enabled = true

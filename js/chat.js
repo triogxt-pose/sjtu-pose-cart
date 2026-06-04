@@ -46,7 +46,7 @@ function sendMessage() {
     const typingEl = addChatMessage('ai', '<span class="typing-dots">导购思考中<span>.</span><span>.</span><span>.</span></span>');
 
     // 判断使用哪种方式
-    if (API_CONFIG.llm.enabled && API_CONFIG.llm.apiKey) {
+    if (API_CONFIG.llm.enabled && (API_CONFIG.llm.apiKey || API_CONFIG.llm.proxyUrl)) {
         callLLMAPI(msg, typingEl);
     } else {
         // 本地关键词匹配
@@ -176,12 +176,21 @@ function localAIResponse(msg) {
 // ===== 远程 LLM API 调用 =====
 async function callLLMAPI(msg, typingEl) {
     try {
-        const response = await fetch(`${API_CONFIG.llm.baseUrl}/chat/completions`, {
+        // 判断使用代理模式还是直接调用
+        const useProxy = !!API_CONFIG.llm.proxyUrl;
+        const apiUrl = useProxy
+            ? `${API_CONFIG.llm.proxyUrl}/api/chat/completions`
+            : `${API_CONFIG.llm.baseUrl}/chat/completions`;
+
+        const headers = { 'Content-Type': 'application/json' };
+        // 直接调用模式需要 Authorization 头，代理模式由 Worker 添加
+        if (!useProxy) {
+            headers['Authorization'] = `Bearer ${API_CONFIG.llm.apiKey}`;
+        }
+
+        const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_CONFIG.llm.apiKey}`
-            },
+            headers: headers,
             body: JSON.stringify({
                 model: API_CONFIG.llm.model,
                 messages: [
@@ -215,16 +224,24 @@ async function callLLMAPI(msg, typingEl) {
 // ===== AI 文案生成 =====
 async function generateAICopyText(locations, poses, style) {
     // 如果启用了远程API，尝试调用
-    if (API_CONFIG.copyGen.enabled && API_CONFIG.copyGen.apiKey) {
+    if (API_CONFIG.copyGen.enabled && (API_CONFIG.copyGen.apiKey || API_CONFIG.copyGen.proxyUrl)) {
         try {
             const locNames = locations.map(l => l.name || l.locationName).join('、');
             const poseNames = poses.map(p => p.name || p.poseName).join('、');
-            const response = await fetch(`${API_CONFIG.copyGen.baseUrl}/chat/completions`, {
+
+            const useProxy = !!API_CONFIG.copyGen.proxyUrl;
+            const apiUrl = useProxy
+                ? `${API_CONFIG.copyGen.proxyUrl}/api/chat/completions`
+                : `${API_CONFIG.copyGen.baseUrl}/chat/completions`;
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (!useProxy) {
+                headers['Authorization'] = `Bearer ${API_CONFIG.copyGen.apiKey}`;
+            }
+
+            const response = await fetch(apiUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${API_CONFIG.copyGen.apiKey}`
-                },
+                headers: headers,
                 body: JSON.stringify({
                     model: API_CONFIG.copyGen.model,
                     messages: [
