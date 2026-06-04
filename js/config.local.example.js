@@ -37,7 +37,7 @@ const LOCAL_API_CONFIG = {
 
     // ===== 文案生成 API =====
     copyGen: {
-        enabled: true,             // 设为 true 启用远程文案生成
+        enabled: false,             // 设为 true 启用远程文案生成
 
         // ---- 模式一：本地直接调用 ----
         apiKey: '你的API密钥',       // 填入你的 API Key
