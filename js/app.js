@@ -55,6 +55,13 @@
         const fallback = document.querySelector('.cover-bg-fallback');
         if (!video) return;
 
+        // 随机选择一个视频播放
+        const randomVideo = coverVideos[Math.floor(Math.random() * coverVideos.length)];
+        const source = document.createElement('source');
+        source.src = randomVideo;
+        source.type = 'video/mp4';
+        video.appendChild(source);
+
         // 检测视频是否可播放
         video.addEventListener('loadeddata', () => {
             video.style.opacity = '1';
@@ -215,7 +222,8 @@
             locContainer.innerHTML = shuffled.map(l => `
                 <div class="rec-card">
                     <div class="rec-card-img" style="background:linear-gradient(135deg,var(--primary-light),var(--primary));">
-                        <span class="rec-card-emoji">${l.emoji}</span>
+                        <img src="${l.img}" alt="${l.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <span class="rec-card-emoji" style="display:none">${l.emoji}</span>
                     </div>
                     <div class="rec-card-body">
                         <div class="rec-card-title">${l.name}</div>
@@ -237,7 +245,8 @@
             poseContainer.innerHTML = shuffled.map(p => `
                 <div class="rec-card">
                     <div class="rec-card-img" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));">
-                        <span class="rec-card-emoji">${p.emoji}</span>
+                        <img src="${p.img}" alt="${p.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <span class="rec-card-emoji" style="display:none">${p.emoji}</span>
                         ${p.hasSkeleton ? '<span class="vintage-tag">AI比对</span>' : ''}
                     </div>
                     <div class="rec-card-body">
@@ -259,7 +268,8 @@
         container.innerHTML = vintagePoses.map(p => `
             <div class="rec-card">
                 <div class="rec-card-img" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));">
-                    <span class="rec-card-emoji">${p.emoji}</span>
+                    <img src="${p.img}" alt="${p.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <span class="rec-card-emoji" style="display:none">${p.emoji}</span>
                     <span class="vintage-tag">AI比对</span>
                 </div>
                 <div class="rec-card-body">
@@ -284,7 +294,8 @@
         container.innerHTML = LOCATIONS.map(l => `
             <div class="rec-card">
                 <div class="rec-card-img" style="background:linear-gradient(135deg,var(--primary-light),var(--primary));">
-                    <span class="rec-card-emoji">${l.emoji}</span>
+                    <img src="${l.img}" alt="${l.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <span class="rec-card-emoji" style="display:none">${l.emoji}</span>
                 </div>
                 <div class="rec-card-body">
                     <div class="rec-card-title">${l.name}</div>
@@ -319,7 +330,8 @@
         container.innerHTML = poses.map(p => `
             <div class="rec-card">
                 <div class="rec-card-img" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));">
-                    <span class="rec-card-emoji">${p.emoji}</span>
+                    <img src="${p.img}" alt="${p.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <span class="rec-card-emoji" style="display:none">${p.emoji}</span>
                     ${p.hasSkeleton ? '<span class="vintage-tag">AI比对</span>' : ''}
                 </div>
                 <div class="rec-card-body">

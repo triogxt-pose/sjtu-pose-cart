@@ -165,11 +165,16 @@ body {
 }
 .cover-bg-video {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    top: 50%;
+    left: 50%;
+    min-width: 100%;
+    min-height: 100%;
+    width: auto;
+    height: auto;
+    transform: translate(-50%, -50%);
     object-fit: cover;
     filter: brightness(0.5) saturate(1.1);
+    background: #001a33;
 }
 .cover-bg-video-overlay {
     position: absolute;
@@ -1657,6 +1662,7 @@ body {
 
 /* ===== 推荐卡片增强 ===== */
 .rec-card-emoji { font-size: 36px; }
+.rec-card-emoji[style*="display:flex"] { display: flex !important; align-items: center; justify-content: center; width: 100%; height: 100%; }
 .rec-card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; }
 .rec-tag {
     font-size: 10px; padding: 2px 8px; border-radius: 50px;

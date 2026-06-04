@@ -86,12 +86,12 @@ function clearCart() {
 
 // 更新购物车角标
 function updateCartBadge() {
-    const badge = document.getElementById('cart-badge');
-    const badge2 = document.getElementById('cart-badge-2');
+    const badge = document.getElementById('cart-count');
+    const badge2 = document.getElementById('cart-fab-count');
     const total = cartItems.locations.length + cartItems.poses.length;
     if (badge) {
         badge.textContent = total;
-        badge.style.display = total > 0 ? 'flex' : 'none';
+        badge.style.display = total > 0 ? 'inline' : 'none';
     }
     if (badge2) {
         badge2.textContent = total;
