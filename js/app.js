@@ -37,6 +37,8 @@
         initChat();
         initCover();
         updateCartBadge();
+        // 提前开始骨骼模板训练（不阻塞页面加载）
+        setTimeout(() => { if (typeof trainPoseTemplates === 'function') trainPoseTemplates(); }, 2000);
     }
 
     // ===== 封面页 =====
@@ -547,6 +549,8 @@
 
         container.innerHTML = locations.map((loc, i) => {
             const poses = (loc.poses && loc.poses.length > 0) ? loc.poses : allPoses.slice(0, 2);
+            const classicPoses = poses.filter(p => p.hasSkeleton);
+            const normalPoses = poses.filter(p => !p.hasSkeleton);
             return `
                 <div class="guide-card ${i === 0 ? 'expanded' : ''}" onclick="this.classList.toggle('expanded')">
                     <div class="guide-card-header">
@@ -559,13 +563,13 @@
                     </div>
                     <div class="guide-card-body">
                         <div class="guide-poses">
-                            ${poses.map(p => `<span class="guide-pose-tag">${p.emoji || '🕺'} ${p.name}</span>`).join('')}
+                            ${normalPoses.map(p => `<span class="guide-pose-tag">${p.emoji || '🕺'} ${p.name}</span>`).join('')}
                         </div>
-                        ${poses.some(p => p.hasSkeleton) ? `
-                            <button class="guide-action-btn" onclick="startMediaPipe('${poses.find(p => p.hasSkeleton)?.id}')">
-                                📷 开启AI姿势比对
+                        ${classicPoses.map(p => `
+                            <button class="guide-action-btn" onclick="event.stopPropagation();startMediaPipe('${p.id}')">
+                                📷 ${p.name}
                             </button>
-                        ` : ''}
+                        `).join('')}
                     </div>
                 </div>
             `;
@@ -700,22 +704,46 @@
 
     function closeMediaPipe() {
         stopCamera();
+        closePosePicker();
         const modal = document.getElementById('modal-mediapipe');
         if (modal) modal.classList.remove('show');
+        // 返回毕业企划页面
+        goToStage('stage-result');
     }
 
-    function switchTargetPose() {
-        // 轮换购物车中有经典照片（hasSkeleton）的姿势
+    function openPosePicker() {
+        const panel = document.getElementById('pose-picker-panel');
+        const grid = document.getElementById('pose-picker-grid');
+        if (!panel || !grid) return;
+
+        // 获取购物车中所有经典照片
         const cartPoses = cartItems.poses.filter(p => p.hasSkeleton);
         if (cartPoses.length === 0) {
-            showToast('购物车中没有经典照片姿势，请先加购经典照片');
+            showToast('购物车中没有经典照片，请先在毕业企划中加购');
             return;
         }
+
+        grid.innerHTML = cartPoses.map(p => `
+            <div class="pose-picker-card" onclick="switchToPose('${p.id}')">
+                <img class="pose-picker-card-img" src="${p.img || ''}" alt="${p.name}" onerror="this.src='';this.style.background='rgba(255,255,255,0.05)';">
+                <div class="pose-picker-card-name">${p.name}</div>
+            </div>
+        `).join('');
+
+        panel.classList.add('show');
+    }
+
+    function closePosePicker() {
+        const panel = document.getElementById('pose-picker-panel');
+        if (panel) panel.classList.remove('show');
+    }
+
+    function switchToPose(poseId) {
+        closePosePicker();
+        const pose = POSES.find(p => p.id === poseId);
+        if (!pose) return;
         stopCamera();
-        const currentId = currentPose?.id;
-        const idx = cartPoses.findIndex(p => p.id === currentId);
-        const next = cartPoses[(idx + 1) % cartPoses.length];
-        openMediaPipe(next);
+        openMediaPipe(pose);
     }
 
     // ===== Toast =====
@@ -749,6 +777,9 @@
     window.openMediaPipe = openMediaPipe;
     window.closeMediaPipe = closeMediaPipe;
     window.switchTargetPose = switchTargetPose;
+    window.openPosePicker = openPosePicker;
+    window.closePosePicker = closePosePicker;
+    window.switchToPose = switchToPose;
     window.copyText = copyText;
     window.showToast = showToast;
 
