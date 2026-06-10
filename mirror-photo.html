@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>📸 镜面拍照辅助工具 - 交大毕业照购物车</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- MediaPipe Tasks Vision 核心库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.js"></script>
+    <!-- 离线骨骼模板（所有经典照片的坐标已硬编码） -->
+    <script src="js/skeleton-templates.js"></script>
+
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            margin: 0; padding: 0; background: #0a0a14; color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            min-height: 100vh; overflow-x: hidden;
+        }
+        .app-header {
+            background: linear-gradient(135deg, #1a1a2e, #0a0a14);
+            padding: 14px 16px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .app-header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+        .app-header .subtitle { font-size: 12px; opacity: 0.6; margin-top: 4px; }
+
+        .pose-picker {
+            display: flex; gap: 8px; padding: 10px 12px; overflow-x: auto;
+            background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05);
+            scrollbar-width: thin;
+        }
+        .pose-picker::-webkit-scrollbar { height: 6px; }
+        .pose-picker::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        .pose-chip {
+            flex-shrink: 0; padding: 8px 14px; border-radius: 20px; background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1); cursor: pointer; font-size: 13px;
+            transition: all 0.2s; white-space: nowrap;
+        }
+        .pose-chip:hover { background: rgba(255,255,255,0.1); }
+        .pose-chip.active {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            border-color: #f39c12; color: #000; font-weight: 600;
+        }
+        .pose-chip .emoji { margin-right: 6px; }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px; padding: 12px;
+        }
+        @media (min-width: 900px) {
+            .main-layout { grid-template-columns: 1fr 1fr; }
+        }
+
+        .panel {
+            background: rgba(255,255,255,0.03); border-radius: 16px; overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .panel-header {
+            padding: 10px 14px; font-size: 13px; font-weight: 600;
+            background: rgba(0,0,0,0.3); display: flex; justify-content: space-between; align-items: center;
+        }
+        .panel-body {
+            position: relative; background: #000; aspect-ratio: 3/4;
+            display: flex; align-items: center; justify-content: center; overflow: hidden;
+        }
+
+        #ref-canvas, #ref-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        }
+        #ref-canvas { z-index: 1; }
+        #ref-overlay { z-index: 2; }
+
+        #camera-video { width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); z-index: 1; }
+        #camera-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            transform: scaleX(-1); z-index: 2;
+        }
+
+        .match-status {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.75); padding: 8px 16px; border-radius: 20px;
+            font-size: 13px; font-weight: 600; z-index: 10;
+            backdrop-filter: blur(10px); white-space: nowrap;
+        }
+        .match-status.good { background: rgba(46,204,113,0.85); color: #000; animation: pulse 1s ease infinite; }
+        .match-status.close { background: rgba(241,196,15,0.85); color: #000; }
+        .match-percent { margin-left: 8px; font-size: 12px; opacity: 0.8; }
+
+        @keyframes pulse {
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.05); }
+        }
+
+        .match-bar {
+            position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+            width: 80%; height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px;
+            overflow: hidden; z-index: 10;
+        }
+        .match-bar-fill {
+            height: 100%; width: 0%; transition: width 0.3s, background 0.3s;
+            background: linear-gradient(90deg, #e74c3c, #f39c12, #2ecc71);
+        }
+
+        .controls {
+            padding: 16px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+        }
+        .btn {
+            padding: 12px 20px; border: none; border-radius: 12px; font-size: 14px;
+            font-weight: 600; cursor: pointer; transition: transform 0.1s, opacity 0.2s;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .btn:active { transform: scale(0.96); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary {
+            background: linear-gradient(135deg, #f39c12, #e67e22); color: #000;
+            box-shadow: 0 4px 20px rgba(243,156,18,0.3);
+        }
+        .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; }
+        .btn-capture {
+            width: 72px; height: 72px; border-radius: 50%;
+            background: radial-gradient(circle, #fff 0%, #fff 60%, #f39c12 60%, #f39c12 100%);
+            border: 4px solid #fff; box-shadow: 0 8px 30px rgba(255,255,255,0.2);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-capture::before { content: ''; width: 54px; height: 54px; border-radius: 50%; background: #fff; }
+
+        .tutorial {
+            padding: 16px; background: rgba(243,156,18,0.08); margin: 0 12px;
+            border-radius: 12px; border: 1px solid rgba(243,156,18,0.15);
+            font-size: 13px; line-height: 1.7;
+        }
+        .tutorial h3 { margin: 0 0 8px 0; font-size: 14px; color: #f39c12; }
+        .tutorial ol { margin: 0; padding-left: 20px; }
+
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85); z-index: 1000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+        }
+        .loading-spinner {
+            width: 48px; height: 48px; border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: #f39c12; border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 14px; opacity: 0.7; text-align: center; max-width: 300px; }
+        .loading-text small { display: block; margin-top: 8px; opacity: 0.6; font-size: 11px; }
+
+        .capture-preview {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.95); z-index: 2000;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .capture-preview.show { display: flex; }
+        .capture-preview img { max-width: 100%; max-height: 70vh; border-radius: 12px; box-shadow: 0 10px 60px rgba(0,0,0,0.5); }
+        .capture-actions { margin-top: 20px; display: flex; gap: 12px; }
+
+        .legend {
+            padding: 12px 16px; font-size: 11px; display: flex; gap: 12px;
+            flex-wrap: wrap; background: rgba(0,0,0,0.2);
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; opacity: 0.8; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+        .network-badge {
+            display: inline-block; padding: 3px 8px; border-radius: 8px;
+            font-size: 10px; font-weight: 600; margin-left: 6px;
+        }
+        .network-badge.online { background: rgba(46,204,113,0.2); color: #2ecc71; }
+        .network-badge.offline { background: rgba(231,76,60,0.2); color: #e74c3c; }
+    </style>
+</head>
+<body>
+    <!-- 加载动画 -->
+    <div class="loading-overlay" id="loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">
+            正在准备姿势匹配工具...
+            <small>首次使用需要下载 AI 模型（约 10MB），请确保网络畅通</small>
+        </div>
+    </div>
+
+    <!-- 头部 -->
+    <header class="app-header">
+        <h1>📸 镜面拍照辅助工具</h1>
+        <div class="subtitle">
+            左侧：参考照片 · 右侧：你的摄像头
+            <span class="network-badge" id="network-badge">检测中...</span>
+        </div>
+    </header>
+
+    <!-- 姿势选择 -->
+    <div class="pose-picker" id="pose-picker"></div>
+
+    <!-- 教程 -->
+    <div style="padding: 0 12px;">
+        <div class="tutorial">
+            <h3>💡 使用指南</h3>
+            <ol>
+                <li>选择一个你想模仿的经典姿势</li>
+                <li>左侧显示参考照片+骨架，右侧是你的实时画面</li>
+                <li>调整身体位置，让右侧的骨架与左侧匹配</li>
+                <li>状态栏变绿时说明姿势匹配，可以按快门！</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- 主画面 -->
+    <div class="main-layout">
+        <!-- 左侧：参考照片 + 骨架 -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>🖼️ 参考照片</span>
+                <span id="ref-info" style="font-size: 11px; opacity: 0.6;"></span>
+            </div>
+            <div class="panel-body" id="ref-body">
+                <canvas id="ref-canvas"></canvas>
+                <canvas id="ref-overlay"></canvas>
+            </div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#fff"></div>参考骨架（白色）</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div>人物编号</div>
+            </div>
+        </div>
+
+        <!-- 右侧：摄像头 + 实时骨架 -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>🎥 你的画面</span>
+                <span id="camera-info" style="font-size: 11px; opacity: 0.6;">等待授权...</span>
+            </div>
+            <div class="panel-body">
+                <video id="camera-video" autoplay playsinline muted></video>
+                <canvas id="camera-canvas"></canvas>
+
+                <div class="match-status" id="match-status">🎯 等待启动摄像头...</div>
+                <div class="match-bar" id="match-bar" style="display:none;">
+                    <div class="match-bar-fill" id="match-bar-fill"></div>
+                </div>
+            </div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#00a8ff"></div>第1人</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#ff64ff"></div>第2人</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#64ffc8"></div>第3人</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#ffdc64"></div>第4人</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 控制按钮 -->
+    <div class="controls">
+        <button class="btn btn-secondary" id="btn-start">📷 启动摄像头</button>
+        <button class="btn btn-capture" id="btn-capture" disabled title="拍照"></button>
+        <button class="btn btn-secondary" id="btn-stop" disabled>⏹️ 停止</button>
+    </div>
+
+    <!-- 拍照预览弹窗 -->
+    <div class="capture-preview" id="capture-preview">
+        <img id="capture-img" alt="照片预览">
+        <div class="capture-actions">
+            <button class="btn btn-secondary" onclick="closePreview()">✖ 放弃</button>
+            <button class="btn btn-primary" onclick="downloadPhoto()">💾 保存照片</button>
+        </div>
+    </div>
+
+<script>
+// ============================================================
+//  核心配置
+// ============================================================
+const SKELETON_CONNECTIONS = [
+    // 躯干
+    [11, 12], [11, 23], [12, 24], [23, 24],
+    // 左臂
+    [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
+    // 右臂
+    [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+    // 左腿
+    [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
+    // 右腿
+    [24, 26], [26, 28], [28, 30], [28, 32], [30, 32]
+];
+
+const USER_COLORS = [
+    { main: '#00a8ff', glow: 'rgba(0,168,255,0.4)', outline: 'rgba(0,100,200,0.6)', box: 'rgba(0,168,255,0.8)' },
+    { main: '#ff64ff', glow: 'rgba(255,100,255,0.4)', outline: 'rgba(200,50,200,0.6)', box: 'rgba(255,100,255,0.8)' },
+    { main: '#64ffc8', glow: 'rgba(100,255,200,0.4)', outline: 'rgba(50,200,150,0.6)', box: 'rgba(100,255,200,0.8)' },
+    { main: '#ffdc64', glow: 'rgba(255,220,100,0.4)', outline: 'rgba(200,170,50,0.6)', box: 'rgba(255,220,100,0.8)' },
+    { main: '#ff9664', glow: 'rgba(255,150,100,0.4)', outline: 'rgba(200,100,50,0.6)', box: 'rgba(255,150,100,0.8)' }
+];
+
+// 姿势列表（与 data.js 中对应）
+const POSE_LIST = [
+    { id: 'classic_1_empresses', name: '甄嬛传单人', emoji: '👸', img: 'assets/images/poses/classic_photos/classic_1_empresses.png' },
+    { id: 'classic_2_wujing_xienan', name: '吴京谢楠双人', emoji: '💑', img: 'assets/images/poses/classic_photos/classic_2_wujing_xienan.png' },
+    { id: 'classic_3_look_back', name: '回头的诱惑(3人)', emoji: '👀', img: 'assets/images/poses/classic_photos/classic_3_look_back.png' },
+    { id: 'classic_3_exo', name: 'EXO三人', emoji: '🎤', img: 'assets/images/poses/classic_photos/classic_3_exo.png' },
+    { id: 'classic_4_trump', name: '特朗普四人', emoji: '🦅', img: 'assets/images/poses/classic_photos/classic_4_trump.png' },
+    { id: 'classic_4_empresses', name: '甄嬛传四人', emoji: '👸', img: 'assets/images/poses/classic_photos/classic_4_empresses.png' },
+    { id: 'classic_7_pro_team', name: '专业团队(7人)', emoji: '🕶️', img: 'assets/images/poses/classic_photos/classic_7_pro_team.png' }
+];
+
+// 全局状态
+let currentPoseId = 'classic_1_empresses';
+let poseLandmarker = null;
+let animationFrame = null;
+let cameraStream = null;
+let lastPhotoBlob = null;
+let poseLandmarkerReady = false;
+
+// DOM 元素
+const video = document.getElementById('camera-video');
+const cameraCanvas = document.getElementById('camera-canvas');
+const cameraCtx = cameraCanvas.getContext('2d');
+const refCanvas = document.getElementById('ref-canvas');
+const refCtx = refCanvas.getContext('2d');
+const refOverlay = document.getElementById('ref-overlay');
+const refOverlayCtx = refOverlay.getContext('2d');
+
+// ============================================================
+//  初始化：渲染姿势选择器 + 绘制参考骨架
+// ============================================================
+function initApp() {
+    // 1. 渲染姿势选择器
+    const picker = document.getElementById('pose-picker');
+    picker.innerHTML = POSE_LIST.map(p =>
+        `<button class="pose-chip${p.id === currentPoseId ? ' active' : ''}" data-id="${p.id}">
+            <span class="emoji">${p.emoji}</span>${p.name}
+        </button>`
+    ).join('');
+
+    picker.querySelectorAll('.pose-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            picker.querySelectorAll('.pose-chip').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentPoseId = btn.dataset.id;
+            drawReferenceSkeleton();
+            updateRefInfo();
+        });
+    });
+
+    // 2. 绘制参考骨架
+    drawReferenceSkeleton();
+    updateRefInfo();
+
+    // 3. 检测 MediaPipe 库是否可用
+    if (window.PoseLandmarker && window.FilesetResolver) {
+        document.getElementById('network-badge').textContent = '库已加载';
+        document.getElementById('network-badge').className = 'network-badge online';
+        // 尝试初始化（会在用户点击启动摄像头时再次尝试）
+        initMediaPipe();
+    } else {
+        document.getElementById('network-badge').textContent = '库加载失败';
+        document.getElementById('network-badge').className = 'network-badge offline';
+        document.getElementById('loading').querySelector('.loading-text').innerHTML =
+            '⚠️ MediaPipe 库无法加载<br><small>这通常是因为无法访问 jsdelivr CDN<br>你仍可以查看参考照片的骨架，但实时匹配不可用</small>';
+        setTimeout(() => document.getElementById('loading').style.display = 'none', 2000);
+    }
+}
+
+// ============================================================
+//  初始化 MediaPipe PoseLandmarker
+// ============================================================
+async function initMediaPipe() {
+    try {
+        if (!window.FilesetResolver || !window.PoseLandmarker) {
+            throw new Error('Tasks Vision 库不可用');
+        }
+
+        const vision = await window.FilesetResolver.forVisionTasks(
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+        );
+
+        poseLandmarker = await window.PoseLandmarker.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+                delegate: 'GPU'
+            },
+            runningMode: 'VIDEO',
+            numPoses: 4,
+            minPoseDetectionConfidence: 0.5,
+            minPosePresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        poseLandmarkerReady = true;
+        document.getElementById('network-badge').textContent = '✓ AI 模型就绪';
+        document.getElementById('network-badge').className = 'network-badge online';
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('btn-start').disabled = false;
+
+    } catch (err) {
+        console.error('MediaPipe 初始化失败:', err);
+        document.getElementById('network-badge').textContent = '模型加载失败';
+        document.getElementById('network-badge').className = 'network-badge offline';
+
+        // 降级提示：模型文件来自 storage.googleapis.com，国内可能无法访问
+        document.getElementById('loading').querySelector('.loading-text').innerHTML =
+            '⚠️ AI 模型下载失败<br>' +
+            '<small>这通常是因为无法访问 storage.googleapis.com（谷歌云存储）<br>' +
+            '解决方案：<br>' +
+            '1️⃣ 使用科学上网工具（推荐）<br>' +
+            '2️⃣ 使用手机 4G/5G 热点切换网络<br>' +
+            '3️⃣ 仍可查看参考骨架+拍照，但实时匹配不可用</small>';
+
+        // 3秒后隐藏加载层，允许使用基础功能
+        setTimeout(() => {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('btn-start').disabled = false;
+        }, 3000);
+    }
+}
+
+// ============================================================
+//  绘制参考照片 + 参考骨架
+// ============================================================
+function drawReferenceSkeleton() {
+    const template = window.SKELETON_TEMPLATES[currentPoseId];
+    if (!template) return;
+
+    // 加载参考图片
+    const poseInfo = POSE_LIST.find(p => p.id === currentPoseId);
+    if (!poseInfo) return;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+        // 绘制照片
+        const bw = refCanvas.parentElement.clientWidth || 400;
+        const bh = refCanvas.parentElement.clientHeight || 533;
+        refCanvas.width = bw; refCanvas.height = bh;
+        refOverlay.width = bw; refOverlay.height = bh;
+
+        // 计算图片填充方式（contain）
+        const scale = Math.min(bw / img.width, bh / img.height);
+        const drawW = img.width * scale;
+        const drawH = img.height * scale;
+        const drawX = (bw - drawW) / 2;
+        const drawY = (bh - drawH) / 2;
+
+        refCtx.clearRect(0, 0, bw, bh);
+        refCtx.drawImage(img, drawX, drawY, drawW, drawH);
+
+        // 绘制骨架（在 overlay 上）
+        refOverlayCtx.clearRect(0, 0, bw, bh);
+
+        // 为每个人物绘制骨架（白色+黑色描边）
+        template.persons.forEach((person, idx) => {
+            drawPersonSkeleton(
+                refOverlayCtx,
+                person,
+                drawX, drawY, drawW, drawH,  // 照片显示区域
+                idx,
+                /*isReference=*/ true
+            );
+        });
+    };
+    img.onerror = function() {
+        // 图片加载失败时绘制空白参考
+        const bw = refCanvas.parentElement.clientWidth || 400;
+        const bh = refCanvas.parentElement.clientHeight || 533;
+        refCanvas.width = bw; refCanvas.height = bh;
+        refOverlay.width = bw; refOverlay.height = bh;
+        refCtx.fillStyle = '#1a1a2e';
+        refCtx.fillRect(0, 0, bw, bh);
+        refCtx.fillStyle = 'rgba(255,255,255,0.3)';
+        refCtx.font = '14px sans-serif';
+        refCtx.textAlign = 'center';
+        refCtx.fillText('图片加载失败', bw/2, bh/2);
+
+        template.persons.forEach((person, idx) => {
+            drawPersonSkeleton(refOverlayCtx, person, 0, 0, bw, bh, idx, true);
+        });
+    };
+    img.src = poseInfo.img;
+}
+
+function updateRefInfo() {
+    const template = window.SKELETON_TEMPLATES[currentPoseId];
+    const poseInfo = POSE_LIST.find(p => p.id === currentPoseId);
+    if (template && poseInfo) {
+        document.getElementById('ref-info').textContent =
+            `${poseInfo.name} · ${template.people}人`;
+    }
+}
+
+// ============================================================
+//  绘制单人骨架（统一函数，既用于参考也用于用户）
+// ============================================================
+function drawPersonSkeleton(ctx, person, offsetX, offsetY, areaW, areaH, personIdx, isReference) {
+    const colors = isReference
+        ? { main: '#ffffff', outline: 'rgba(0,0,0,0.8)', glow: 'rgba(255,255,255,0.25)', box: 'rgba(255,255,255,0.8)' }
+        : USER_COLORS[personIdx % USER_COLORS.length];
+
+    // 计算人物边界框
+    let minX = 1, maxX = 0, minY = 1, maxY = 0;
+    let found = false;
+    for (let i = 0; i < 33; i++) {
+        const pt = person[i];
+        if (pt && (pt.v !== undefined ? pt.v : 1) > 0.3) {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+            found = true;
+        }
+    }
+    if (!found) return;
+
+    // 1) 绘制人物边界框 + 编号
+    const boxPadX = (maxX - minX) * 0.18;
+    const boxPadYTop = (maxY - minY) * 0.12;
+    const boxPadYBottom = (maxY - minY) * 0.05;
+
+    const bx = offsetX + Math.max(0, minX - boxPadX) * areaW;
+    const by = offsetY + Math.max(0, minY - boxPadYTop) * areaH;
+    const bw2 = Math.min(areaW, (maxX + boxPadX) * areaW) - (offsetX + bx - offsetX);
+    const bh2 = Math.min(areaH, (maxY + boxPadYBottom) * areaH) - (offsetY + by - offsetY);
+
+    ctx.save();
+    // 参考 - 虚线框；用户 - 实线框
+    ctx.strokeStyle = colors.box;
+    ctx.lineWidth = 2;
+    if (isReference) ctx.setLineDash([6, 5]);
+    ctx.strokeRect(bx, by, bw2, bh2);
+    ctx.setLineDash([]);
+
+    // 编号标签
+    const label = isReference ? `参考${personIdx + 1}` : `人物${personIdx + 1}`;
+    ctx.font = 'bold 12px sans-serif';
+    const labelW = ctx.measureText(label).width + 14;
+    ctx.fillStyle = colors.box;
+    ctx.fillRect(bx, by - 18, labelW, 18);
+    ctx.fillStyle = isReference ? '#000' : 'rgba(255,255,255,0.95)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, bx + 7, by - 9);
+    ctx.restore();
+
+    // 2) 绘制骨架连接线
+    SKELETON_CONNECTIONS.forEach(([from, to]) => {
+        const p1 = person[from];
+        const p2 = person[to];
+        if (!p1 || !p2) return;
+        const v1 = (p1.v !== undefined ? p1.v : 1);
+        const v2 = (p2.v !== undefined ? p2.v : 1);
+        if (v1 < 0.3 || v2 < 0.3) return;
+
+        const x1 = offsetX + p1.x * areaW;
+        const y1 = offsetY + p1.y * areaH;
+        const x2 = offsetX + p2.x * areaW;
+        const y2 = offsetY + p2.y * areaH;
+
+        // 外层描边
+        ctx.strokeStyle = colors.outline;
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        // 中层主色
+        ctx.shadowColor = colors.glow;
+        ctx.shadowBlur = isReference ? 8 : 12;
+        ctx.strokeStyle = colors.main;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    });
+
+    // 3) 绘制关节点
+    for (let i = 0; i < 33; i++) {
+        const pt = person[i];
+        if (!pt) continue;
+        const visibility = (pt.v !== undefined ? pt.v : 1);
+        if (visibility < 0.3) continue;
+
+        const x = offsetX + pt.x * areaW;
+        const y = offsetY + pt.y * areaH;
+        const isMajor = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].includes(i);
+        const r = isMajor ? 5 : 3;
+
+        ctx.beginPath();
+        ctx.arc(x, y, r + 2, 0, 2 * Math.PI);
+        ctx.fillStyle = colors.outline;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = colors.main;
+        ctx.fill();
+
+        if (isMajor) {
+            ctx.beginPath();
+            ctx.arc(x - 1, y - 1, Math.max(1, r * 0.4), 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.fill();
+        }
+    }
+}
+
+// ============================================================
+//  启动/停止摄像头
+// ============================================================
+async function startCamera() {
+    try {
+        document.getElementById('camera-info').textContent = '请求权限...';
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'user' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false
+        });
+
+        video.srcObject = cameraStream;
+        video.setAttribute('playsinline', '');
+        video.muted = true;
+
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(resolve, 5000);
+            video.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
+        });
+
+        try { await video.play(); } catch(e) { /* 忽略 */ }
+
+        document.getElementById('camera-info').textContent = `${video.videoWidth}x${video.videoHeight}`;
+        document.getElementById('btn-start').disabled = true;
+        document.getElementById('btn-stop').disabled = false;
+        document.getElementById('btn-capture').disabled = false;
+        document.getElementById('match-bar').style.display = 'block';
+
+        // 开始实时检测循环
+        startDetectionLoop();
+
+    } catch (err) {
+        console.error('摄像头启动失败:', err);
+        document.getElementById('camera-info').textContent = '❌ 权限被拒绝';
+        document.getElementById('match-status').textContent =
+            '❌ 无法访问摄像头<br>请检查浏览器设置';
+        document.getElementById('match-status').style.background = 'rgba(231,76,60,0.85)';
+    }
+}
+
+function stopCamera() {
+    if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = null; }
+    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    if (video.srcObject) { video.srcObject = null; }
+    cameraCtx.clearRect(0, 0, cameraCanvas.width, cameraCanvas.height);
+
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+    document.getElementById('btn-capture').disabled = true;
+    document.getElementById('match-bar').style.display = 'none';
+    document.getElementById('match-status').textContent = '🎯 摄像头已停止';
+    document.getElementById('match-status').style.background = 'rgba(0,0,0,0.7)';
+    document.getElementById('camera-info').textContent = '已停止';
+}
+
+// ============================================================
+//  实时检测循环
+// ============================================================
+function startDetectionLoop() {
+    let lastDetectTime = 0;
+
+    function loop(now) {
+        if (!cameraStream) return;
+
+        // 同步 canvas 尺寸
+        if (video.videoWidth && video.videoHeight) {
+            if (cameraCanvas.width !== video.videoWidth) {
+                cameraCanvas.width = video.videoWidth;
+                cameraCanvas.height = video.videoHeight;
+            }
+        }
+
+        cameraCtx.clearRect(0, 0, cameraCanvas.width, cameraCanvas.height);
+
+        // 检测（限制频率）
+        let landmarks = null;
+        if (poseLandmarkerReady && poseLandmarker && video.readyState >= 2 && (now - lastDetectTime) >= 40) {
+            try {
+                const result = poseLandmarker.detectForVideo(video, now);
+                if (result && result.landmarks) landmarks = result.landmarks;
+                lastDetectTime = now;
+            } catch(e) { /* 检测出错跳过 */ }
+        }
+
+        // 绘制用户骨架
+        if (landmarks && landmarks.length > 0) {
+            landmarks.forEach((lm, idx) => {
+                const person = {};
+                lm.forEach((p, i) => {
+                    person[i] = { x: p.x, y: p.y, v: (typeof p.visibility === 'number' ? p.visibility : 1) };
+                });
+                drawPersonSkeleton(
+                    cameraCtx,
+                    person,
+                    0, 0, cameraCanvas.width, cameraCanvas.height,
+                    idx,
+                    false
+                );
+            });
+
+            // 计算匹配度
+            const matchScore = calcMatchScore(landmarks);
+            updateMatchStatus(matchScore);
+        } else {
+            // 未检测到人物
+            updateMatchStatus(null);
+        }
+
+        animationFrame = requestAnimationFrame(loop);
+    }
+    animationFrame = requestAnimationFrame(loop);
+}
+
+// ============================================================
+//  匹配度计算：将用户骨架与参考骨架的主要关节点对比
+// ============================================================
+function calcMatchScore(userLandmarks) {
+    const template = window.SKELETON_TEMPLATES[currentPoseId];
+    if (!template) return 1;
+
+    // 只匹配参考中的主要人物（第一个） - 简化策略
+    // 用户摄像头通常一次只有1人，如果多人则分别匹配
+    let bestAvgDist = Infinity;
+    let matchedCount = 0;
+
+    const majorJoints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+
+    // 取前3个参考人物用于匹配（实际匹配主要看第一个）
+    for (let refIdx = 0; refIdx < Math.min(template.persons.length, 3); refIdx++) {
+        // 计算此人在参考中的尺度（用于归一化）
+        const refP = template.persons[refIdx];
+        if (!refP[11] || !refP[12] || !refP[23] || !refP[24]) continue;
+
+        // 归一化：以肩宽和躯干高度为基准
+        const refShoulderDist = Math.abs(refP[11].x - refP[12].x) || 0.15;
+        const refTorsoH = Math.abs(refP[11].y - refP[23].y) || 0.15;
+        const refScale = Math.max(refShoulderDist, refTorsoH);
+
+        // 对每个用户检测到的人计算与该参考人的距离
+        for (let userIdx = 0; userIdx < userLandmarks.length; userIdx++) {
+            const user = userLandmarks[userIdx];
+            let totalDist = 0;
+            let count = 0;
+
+            majorJoints.forEach(i => {
+                const ref = refP[i];
+                const up = user[i];
+                if (!ref || !up) return;
+                const uv = (typeof up.visibility === 'number' ? up.visibility : 1);
+                if (uv < 0.4) return;
+
+                const dx = (ref.x - up.x) / refScale;
+                const dy = (ref.y - up.y) / refScale;
+                totalDist += Math.sqrt(dx*dx + dy*dy);
+                count++;
+            });
+
+            if (count > 6) {
+                const avg = totalDist / count;
+                if (avg < bestAvgDist) bestAvgDist = avg;
+                matchedCount++;
+            }
+        }
+    }
+
+    return isFinite(bestAvgDist) ? bestAvgDist : null;
+}
+
+function updateMatchStatus(score) {
+    const status = document.getElementById('match-status');
+    const barFill = document.getElementById('match-bar-fill');
+
+    if (score === null || score === undefined) {
+        status.textContent = '👀 未检测到人物';
+        status.style.background = 'rgba(0,0,0,0.7)';
+        status.className = 'match-status';
+        if (barFill) barFill.style.width = '5%';
+        return;
+    }
+
+    // score 越小匹配越好
+    let text, percent;
+    if (score < 0.18) {
+        text = '✅ 完美对齐！按快门！';
+        percent = Math.max(92, 100 - score * 200);
+        status.className = 'match-status good';
+        status.style.background = 'rgba(46,204,113,0.9)';
+    } else if (score < 0.35) {
+        text = '🟡 接近了！微调一下...';
+        percent = 70 + (0.35 - score) / 0.17 * 20;
+        status.className = 'match-status close';
+        status.style.background = 'rgba(241,196,15,0.9)';
+    } else if (score < 0.6) {
+        text = '🎯 继续对齐... (差距 ' + score.toFixed(2) + ')';
+        percent = 30 + (0.6 - score) / 0.25 * 40;
+        status.className = 'match-status';
+        status.style.background = 'rgba(0,100,200,0.8)';
+    } else {
+        text = '📐 请站到画面中央';
+        percent = 10;
+        status.className = 'match-status';
+        status.style.background = 'rgba(0,0,0,0.7)';
+    }
+
+    status.innerHTML = `${text} <span class="match-percent">${Math.round(percent)}%</span>`;
+    if (barFill) barFill.style.width = Math.max(5, Math.min(100, percent)) + '%';
+}
+
+// ============================================================
+//  拍照功能：合成视频画面+骨架+参考照片
+// ============================================================
+function capturePhoto() {
+    // 创建合成画布 - 左右分栏：参考照片 + 用户画面
+    const comp = document.createElement('canvas');
+    comp.width = 1600; comp.height = 900;
+    const ctx = comp.getContext('2d');
+
+    // 背景
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, comp.width, comp.height);
+
+    // 1) 左侧：参考照片
+    const leftW = comp.width / 2;
+    const leftH = comp.height;
+    const poseInfo = POSE_LIST.find(p => p.id === currentPoseId);
+    const template = window.SKELETON_TEMPLATES[currentPoseId];
+
+    // 绘制参考照片
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+        const scale = Math.min(leftW / img.width, (leftH - 80) / img.height);
+        const drawW = img.width * scale;
+        const drawH = img.height * scale;
+        const drawX = (leftW - drawW) / 2;
+        const drawY = 70 + ((leftH - 80) - drawH) / 2;
+
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, leftW, comp.height);
+        try { ctx.drawImage(img, drawX, drawY, drawW, drawH); } catch(e) {}
+
+        // 在参考照片上绘制骨架（白色）
+        if (template) {
+            template.persons.forEach((person, idx) => {
+                const colors = { main: '#ffffff', outline: 'rgba(0,0,0,0.8)', glow: 'rgba(255,255,255,0.25)', box: 'rgba(255,255,255,0.7)' };
+                drawPersonOnCanvas(ctx, person, drawX, drawY, drawW, drawH, idx, colors, true);
+            });
+        }
+
+        // 左侧标题
+        ctx.fillStyle = '#f39c12';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('🖼️ 参考姿势', leftW / 2, 40);
+        ctx.font = '20px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillText(poseInfo ? poseInfo.name : '', leftW / 2, 68);
+
+        // 2) 右侧：用户摄像头画面（镜像）
+        const rightW = comp.width / 2;
+        const rightX = leftW;
+
+        ctx.fillStyle = '#000';
+        ctx.fillRect(rightX, 0, rightW, comp.height);
+
+        if (video && video.videoWidth) {
+            const vw = video.videoWidth, vh = video.videoHeight;
+            const vScale = Math.min(rightW / vw, (leftH - 80) / vh);
+            const vDrawW = vw * vScale, vDrawH = vh * vScale;
+            const vDrawX = rightX + (rightW - vDrawW) / 2;
+            const vDrawY = 70 + ((leftH - 80) - vDrawH) / 2;
+
+            // 镜像绘制视频帧
+            ctx.save();
+            ctx.translate(vDrawX + vDrawW, vDrawY);
+            ctx.scale(-1, 1);
+            try { ctx.drawImage(video, 0, 0, vDrawW, vDrawH); } catch(e) {}
+            ctx.restore();
+
+            // 绘制用户骨架（如果有）
+            if (poseLandmarkerReady && poseLandmarker && video.readyState >= 2) {
+                try {
+                    const result = poseLandmarker.detectForVideo(video, performance.now());
+                    if (result && result.landmarks && result.landmarks.length > 0) {
+                        result.landmarks.forEach((lm, idx) => {
+                            const person = {};
+                            lm.forEach((p, i) => {
+                                person[i] = { x: p.x, y: p.y, v: (typeof p.visibility === 'number' ? p.visibility : 1) };
+                            });
+                            const colors = USER_COLORS[idx % USER_COLORS.length];
+                            drawPersonOnCanvas(ctx, person, vDrawX, vDrawY, vDrawW, vDrawH, idx, colors, false);
+                        });
+                    }
+                } catch(e) {}
+            }
+
+            // 右侧标题
+            ctx.fillStyle = '#00a8ff';
+            ctx.font = 'bold 28px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🎥 你的画面', rightX + rightW / 2, 40);
+            ctx.font = '20px sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.fillText(new Date().toLocaleString('zh-CN'), rightX + rightW / 2, 68);
+        } else {
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '24px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('未启动摄像头', rightX + rightW / 2, leftH / 2);
+        }
+
+        // 3) 中间分隔线
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(leftW, 0);
+        ctx.lineTo(leftW, comp.height);
+        ctx.stroke();
+
+        // 4) 底部水印
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.textAlign = 'center';
+        ctx.fillText('📸 交大毕业照购物车 · 姿势匹配辅助工具', comp.width / 2, comp.height - 20);
+
+        // 显示预览
+        comp.toBlob(function(blob) {
+            if (blob) {
+                lastPhotoBlob = blob;
+                const url = URL.createObjectURL(blob);
+                document.getElementById('capture-img').src = url;
+                document.getElementById('capture-preview').classList.add('show');
+            }
+        }, 'image/png', 0.95);
+    };
+    img.onerror = function() {
+        // 图片加载失败时也继续拍照（只拍用户）
+        const comp = document.createElement('canvas');
+        comp.width = 800; comp.height = 900;
+        const ctx = comp.getContext('2d');
+        ctx.fillStyle = '#0a0a14'; ctx.fillRect(0, 0, comp.width, comp.height);
+
+        if (video && video.videoWidth) {
+            const vw = video.videoWidth, vh = video.videoHeight;
+            const vScale = Math.min((comp.width - 40) / vw, (comp.height - 120) / vh);
+            const vDrawW = vw * vScale, vDrawH = vh * vScale;
+            const vDrawX = (comp.width - vDrawW) / 2;
+            const vDrawY = 80;
+
+            ctx.save();
+            ctx.translate(vDrawX + vDrawW, vDrawY);
+            ctx.scale(-1, 1);
+            try { ctx.drawImage(video, 0, 0, vDrawW, vDrawH); } catch(e) {}
+            ctx.restore();
+
+            if (poseLandmarkerReady && poseLandmarker) {
+                try {
+                    const result = poseLandmarker.detectForVideo(video, performance.now());
+                    if (result && result.landmarks) {
+                        result.landmarks.forEach((lm, idx) => {
+                            const person = {};
+                            lm.forEach((p, i) => { person[i] = { x: p.x, y: p.y, v: (typeof p.visibility === 'number' ? p.visibility : 1) }; });
+                            drawPersonOnCanvas(ctx, person, vDrawX, vDrawY, vDrawW, vDrawH, idx, USER_COLORS[idx % USER_COLORS.length], false);
+                        });
+                    }
+                } catch(e) {}
+            }
+        }
+
+        ctx.fillStyle = '#f39c12';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('📸 你的画面（单张）', comp.width / 2, 40);
+
+        comp.toBlob(function(blob) {
+            if (blob) {
+                lastPhotoBlob = blob;
+                const url = URL.createObjectURL(blob);
+                document.getElementById('capture-img').src = url;
+                document.getElementById('capture-preview').classList.add('show');
+            }
+        }, 'image/png', 0.95);
+    };
+    img.src = poseInfo.img;
+}
+
+// 简化版 drawPersonSkeleton 用于拍照合成
+function drawPersonOnCanvas(ctx, person, offsetX, offsetY, areaW, areaH, personIdx, colors, isReference) {
+    // 边界框
+    let minX = 1, maxX = 0, minY = 1, maxY = 0, found = false;
+    for (let i = 0; i < 33; i++) {
+        const pt = person[i];
+        if (pt && (pt.v !== undefined ? pt.v : 1) > 0.3) {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+            found = true;
+        }
+    }
+    if (!found) return;
+
+    const boxPadX = (maxX - minX) * 0.15;
+    const boxPadYTop = (maxY - minY) * 0.10;
+    const boxPadYBottom = (maxY - minY) * 0.05;
+
+    const bx = offsetX + Math.max(0, minX - boxPadX) * areaW;
+    const by = offsetY + Math.max(0, minY - boxPadYTop) * areaH;
+    const bw2 = Math.min(areaW, (maxX + boxPadX) * areaW) - (offsetX + (Math.max(0, minX - boxPadX)) * areaW);
+    const bh2 = Math.min(areaH, (maxY + boxPadYBottom) * areaH) - (offsetY + (Math.max(0, minY - boxPadYTop)) * areaH);
+
+    ctx.strokeStyle = colors.box;
+    ctx.lineWidth = 3;
+    if (isReference) ctx.setLineDash([10, 8]);
+    ctx.strokeRect(bx, by, bw2, bh2);
+    ctx.setLineDash([]);
+
+    // 骨架连接
+    SKELETON_CONNECTIONS.forEach(([from, to]) => {
+        const p1 = person[from]; const p2 = person[to];
+        if (!p1 || !p2) return;
+        const v1 = (p1.v !== undefined ? p1.v : 1);
+        const v2 = (p2.v !== undefined ? p2.v : 1);
+        if (v1 < 0.3 || v2 < 0.3) return;
+
+        const x1 = offsetX + p1.x * areaW; const y1 = offsetY + p1.y * areaH;
+        const x2 = offsetX + p2.x * areaW; const y2 = offsetY + p2.y * areaH;
+
+        ctx.strokeStyle = colors.outline;
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+        ctx.strokeStyle = colors.main;
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    });
+
+    // 关节点
+    for (let i = 0; i < 33; i++) {
+        const pt = person[i];
+        if (!pt) continue;
+        const v = (pt.v !== undefined ? pt.v : 1);
+        if (v < 0.3) continue;
+        const x = offsetX + pt.x * areaW;
+        const y = offsetY + pt.y * areaH;
+        const isMajor = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].includes(i);
+        const r = isMajor ? 7 : 4;
+
+        ctx.beginPath();
+        ctx.arc(x, y, r + 2, 0, 2 * Math.PI);
+        ctx.fillStyle = colors.outline;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = colors.main;
+        ctx.fill();
+    }
+
+    // 编号
+    const label = isReference ? `参考${personIdx + 1}` : `人物${personIdx + 1}`;
+    ctx.font = 'bold 18px sans-serif';
+    const labelW = ctx.measureText(label).width + 20;
+    ctx.fillStyle = colors.box;
+    ctx.fillRect(bx, by - 26, labelW, 26);
+    ctx.fillStyle = isReference ? '#000' : 'rgba(255,255,255,0.95)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, bx + 10, by - 13);
+}
+
+function closePreview() {
+    document.getElementById('capture-preview').classList.remove('show');
+    const imgEl = document.getElementById('capture-img');
+    if (imgEl.src && imgEl.src.startsWith('blob:')) URL.revokeObjectURL(imgEl.src);
+    imgEl.src = '';
+}
+
+function downloadPhoto() {
+    if (!lastPhotoBlob) return;
+    const url = URL.createObjectURL(lastPhotoBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sjtu_${currentPoseId}_${Date.now()}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ============================================================
+//  事件绑定
+// ============================================================
+document.getElementById('btn-start').addEventListener('click', startCamera);
+document.getElementById('btn-stop').addEventListener('click', stopCamera);
+document.getElementById('btn-capture').addEventListener('click', capturePhoto);
+
+window.addEventListener('resize', () => {
+    drawReferenceSkeleton();
+});
+
+document.addEventListener('DOMContentLoaded', initApp);
+// 兼容：如果 DOMContentLoaded 已触发
+if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    setTimeout(initApp, 100);
+}
+</script>
+</body>
+</html>
