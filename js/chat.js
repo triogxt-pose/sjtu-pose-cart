@@ -9,13 +9,19 @@ function initChat() {
     const input = document.getElementById('chat-input');
     const voiceBtn = document.getElementById('btn-voice');
 
-    if (sendBtn) sendBtn.addEventListener('click', sendMessage);
+    if (sendBtn) {
+        sendBtn.addEventListener('click', sendMessage);
+        sendBtn.addEventListener('touchend', (e) => { e.preventDefault(); sendMessage(); });
+    }
     if (input) {
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') sendMessage();
+            if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
         });
     }
-    if (voiceBtn) voiceBtn.addEventListener('click', startVoiceInput);
+    if (voiceBtn) {
+        voiceBtn.addEventListener('click', startVoiceInput);
+        voiceBtn.addEventListener('touchend', (e) => { e.preventDefault(); startVoiceInput(); });
+    }
 }
 
 // 快捷发送
@@ -28,32 +34,40 @@ function quickSend(text) {
 }
 
 function sendMessage() {
-    const input = document.getElementById('chat-input');
-    if (!input) return;
-    const msg = input.value.trim();
-    if (!msg) return;
+    try {
+        const input = document.getElementById('chat-input');
+        if (!input) return;
+        const msg = input.value.trim();
+        if (!msg) return;
 
-    addChatMessage('user', msg);
-    input.value = '';
-    chatHistory.push({ role: 'user', content: msg });
+        addChatMessage('user', msg);
+        input.value = '';
+        chatHistory.push({ role: 'user', content: msg });
 
-    // 限制历史长度
-    if (chatHistory.length > APP_CONFIG.maxChatHistory * 2) {
-        chatHistory = chatHistory.slice(-APP_CONFIG.maxChatHistory * 2);
-    }
+        // 限制历史长度
+        const maxHistory = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.maxChatHistory) ? APP_CONFIG.maxChatHistory : 20;
+        if (chatHistory.length > maxHistory * 2) {
+            chatHistory = chatHistory.slice(-maxHistory * 2);
+        }
 
-    // 显示思考中
-    const typingEl = addChatMessage('ai', '<span class="typing-dots">导购思考中<span>.</span><span>.</span><span>.</span></span>');
+        // 显示思考中
+        const typingEl = addChatMessage('ai', '<span class="typing-dots">导购思考中<span>.</span><span>.</span><span>.</span></span>');
 
-    // 判断使用哪种方式
-    if (API_CONFIG.llm.enabled && (API_CONFIG.llm.apiKey || API_CONFIG.llm.proxyUrl)) {
-        callLLMAPI(msg, typingEl);
-    } else {
-        // 本地关键词匹配
-        chatTypingTimer = setTimeout(() => {
-            removeMessage(typingEl);
-            localAIResponse(msg);
-        }, 800 + Math.random() * 600);
+        // 判断使用哪种方式
+        const llmEnabled = (typeof API_CONFIG !== 'undefined' && API_CONFIG.llm && API_CONFIG.llm.enabled);
+        const hasLLM = llmEnabled && (API_CONFIG.llm.apiKey || API_CONFIG.llm.proxyUrl);
+        if (hasLLM) {
+            callLLMAPI(msg, typingEl);
+        } else {
+            // 本地关键词匹配
+            chatTypingTimer = setTimeout(() => {
+                removeMessage(typingEl);
+                localAIResponse(msg);
+            }, 800 + Math.random() * 600);
+        }
+    } catch (e) {
+        console.error('发送消息出错:', e);
+        showToast && showToast('发送失败，请重试');
     }
 }
 

@@ -33,12 +33,12 @@
 
     // ===== 初始化 =====
     function init() {
-        initCart();
-        initChat();
-        initCover();
-        updateCartBadge();
+        try { initCart(); } catch (e) { console.error('购物车初始化失败:', e); }
+        try { initChat(); } catch (e) { console.error('聊天初始化失败:', e); }
+        try { initCover(); } catch (e) { console.error('封面初始化失败:', e); }
+        try { updateCartBadge(); } catch (e) { console.error('购物车徽章更新失败:', e); }
         // 提前开始骨骼模板训练（不阻塞页面加载）
-        setTimeout(() => { if (typeof trainPoseTemplates === 'function') trainPoseTemplates(); }, 2000);
+        setTimeout(() => { try { if (typeof trainPoseTemplates === 'function') trainPoseTemplates(); } catch (e) { console.error('训练失败:', e); } }, 2000);
     }
 
     // ===== 封面页 =====
@@ -57,36 +57,56 @@
         const fallback = document.querySelector('.cover-bg-fallback');
         if (!video) return;
 
-        // 随机选择一个视频播放
+        // 随机选择一个视频
         const randomVideo = coverVideos[Math.floor(Math.random() * coverVideos.length)];
         const source = document.createElement('source');
         source.src = randomVideo;
         source.type = 'video/mp4';
         video.appendChild(source);
+        video.load();  // 强制重新加载
 
-        // 检测视频是否可播放
-        video.addEventListener('loadeddata', () => {
+        // 视频可播放后显示
+        let videoShown = false;
+        const showVideo = () => {
+            if (videoShown) return;
+            videoShown = true;
             video.style.opacity = '1';
-        });
+        };
 
-        video.addEventListener('error', () => {
+        video.addEventListener('loadeddata', showVideo);
+        video.addEventListener('canplay', showVideo);
+        video.addEventListener('playing', showVideo);
+
+        video.addEventListener('error', (e) => {
+            console.warn('视频加载失败:', video.error?.message || e);
             if (fallback) fallback.classList.add('show');
             video.style.display = 'none';
         });
 
-        // 超时3秒后显示降级背景
+        // 超时降级
         setTimeout(() => {
-            if (video.readyState < 2) {
+            if (!videoShown && video.readyState < 2) {
                 if (fallback) fallback.classList.add('show');
                 video.style.display = 'none';
             }
-        }, 3000);
+        }, 4000);
 
+        // 初始状态：透明，等待加载
         video.style.opacity = '0';
         video.style.transition = 'opacity 1.5s ease';
-        video.play().catch(() => {
-            if (fallback) fallback.classList.add('show');
-        });
+
+        // 尝试播放（muted 属性在 HTML 中已设置）
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+            playPromise.catch((err) => {
+                console.warn('视频自动播放被阻止:', err.message);
+                // 尝试静音后重试
+                video.muted = true;
+                video.play().catch(() => {
+                    if (fallback) fallback.classList.add('show');
+                });
+            });
+        }
     }
 
     // 封面轮播（降级）
