@@ -173,7 +173,7 @@ function localAIResponse(msg) {
     addChatMessage('ai', closings[Math.floor(Math.random() * closings.length)]);
 }
 
-// ===== 远程 LLM API 调用 =====
+// ===== 远程 LLM API 调用（支持流式输出 + 卡片解析） =====
 async function callLLMAPI(msg, typingEl) {
     try {
         // 判断使用代理模式还是直接调用
@@ -183,7 +183,6 @@ async function callLLMAPI(msg, typingEl) {
             : `${API_CONFIG.llm.baseUrl}/chat/completions`;
 
         const headers = { 'Content-Type': 'application/json' };
-        // 直接调用模式需要 Authorization 头，代理模式由 Worker 添加
         if (!useProxy) {
             headers['Authorization'] = `Bearer ${API_CONFIG.llm.apiKey}`;
         }
@@ -198,26 +197,170 @@ async function callLLMAPI(msg, typingEl) {
                     ...chatHistory.slice(-10)
                 ],
                 temperature: API_CONFIG.llm.temperature,
-                max_tokens: API_CONFIG.llm.maxTokens
+                max_tokens: API_CONFIG.llm.maxTokens,
+                stream: true   // 启用流式输出
             })
         });
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-        const data = await response.json();
-        removeMessage(typingEl);
+        // 流式读取 SSE
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+        let bubbleEl = null;
 
-        if (data.choices && data.choices[0]) {
-            const aiMsg = data.choices[0].message.content;
-            addChatMessage('ai', aiMsg);
-            chatHistory.push({ role: 'assistant', content: aiMsg });
+        // 替换 typing 动画为实际气泡
+        removeMessage(typingEl);
+        bubbleEl = addChatMessage('ai', '');
+        const bubbleDiv = bubbleEl.querySelector('.chat-bubble');
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6).trim();
+                    if (data === '[DONE]') continue;
+
+                    try {
+                        const json = JSON.parse(data);
+                        const delta = json.choices?.[0]?.delta?.content;
+                        if (delta) {
+                            fullContent += delta;
+                            if (bubbleDiv) {
+                                bubbleDiv.textContent = fullContent;
+                            }
+                        }
+                    } catch (e) {
+                        // 跳过非 JSON 行
+                    }
+                }
+            }
+
+            // 滚动到底部
+            const container = document.getElementById('chat-messages');
+            if (container) container.scrollTop = container.scrollHeight;
+        }
+
+        // 流式完成，解析卡片并添加到历史
+        chatHistory.push({ role: 'assistant', content: fullContent });
+
+        // 解析 AI 回复中的 [卡片:type:id] 标记并渲染为可点击卡片
+        if (fullContent.includes('[卡片:')) {
+            parseAndRenderCards(fullContent);
         }
     } catch (error) {
         removeMessage(typingEl);
         if (APP_CONFIG.debug) {
-            console.warn('LLM API 调用失败，降级为本地模式:', error.message);
+            console.warn('LLM API 流式调用失败，尝试非流式:', error.message);
         }
-        localAIResponse(msg);
+        // 降级：尝试非流式调用
+        try {
+            await callLLMAPINonStream(msg, typingEl);
+        } catch (e2) {
+            removeMessage(typingEl);
+            if (APP_CONFIG.debug) {
+                console.warn('LLM API 调用失败，降级为本地模式:', e2.message);
+            }
+            localAIResponse(msg);
+        }
+    }
+}
+
+// 非流式降级
+async function callLLMAPINonStream(msg, typingEl) {
+    const useProxy = !!API_CONFIG.llm.proxyUrl;
+    const apiUrl = useProxy
+        ? `${API_CONFIG.llm.proxyUrl}/api/chat/completions`
+        : `${API_CONFIG.llm.baseUrl}/chat/completions`;
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (!useProxy) {
+        headers['Authorization'] = `Bearer ${API_CONFIG.llm.apiKey}`;
+    }
+
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+            model: API_CONFIG.llm.model,
+            messages: [
+                { role: 'system', content: API_CONFIG.llm.systemPrompt },
+                ...chatHistory.slice(-10)
+            ],
+            temperature: API_CONFIG.llm.temperature,
+            max_tokens: API_CONFIG.llm.maxTokens
+        })
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const data = await response.json();
+    removeMessage(typingEl);
+
+    if (data.choices && data.choices[0]) {
+        const aiMsg = data.choices[0].message.content;
+        addChatMessage('ai', aiMsg);
+        chatHistory.push({ role: 'assistant', content: aiMsg });
+
+        if (aiMsg.includes('[卡片:')) {
+            parseAndRenderCards(aiMsg);
+        }
+    }
+}
+
+// ===== 解析 AI 回复中的卡片标记并渲染可点击卡片 =====
+function parseAndRenderCards(content) {
+    const cardRegex = /\[卡片:(location|pose):([^\]]+)\]/g;
+    const cards = { locations: [], poses: [] };
+
+    let match;
+    while ((match = cardRegex.exec(content)) !== null) {
+        const type = match[1]; // 'location' 或 'pose'
+        const id = match[2];
+
+        if (type === 'location') {
+            const loc = LOCATIONS.find(l => l.id === id);
+            if (loc) cards.locations.push(loc);
+        } else if (type === 'pose') {
+            const pose = POSES.find(p => p.id === id);
+            if (pose) cards.poses.push(pose);
+        }
+    }
+
+    // 去重
+    cards.locations = [...new Map(cards.locations.map(l => [l.id, l])).values()];
+    cards.poses = [...new Map(cards.poses.map(p => [p.id, p])).values()];
+
+    // 渲染地点卡片
+    if (cards.locations.length > 0) {
+        const cardsHtml = cards.locations.map(l => `
+            <div class="chat-card" onclick="addToCart('location',{id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">
+                <div class="card-emoji">${l.emoji}</div>
+                <div class="card-title">${l.name}</div>
+                <div class="card-meta">${l.desc}</div>
+                <button class="card-add-btn" onclick="event.stopPropagation();addToCart('location',{id:'${l.id}',name:'${l.name}',emoji:'${l.emoji}'});updateCartBadge();">🛒 加购</button>
+            </div>
+        `).join('');
+        addChatMessage('ai', `<div style="font-size:12px;color:var(--text-light);margin-bottom:4px;">📍 推荐地点（点击加购）：</div><div class="chat-card-wrap">${cardsHtml}</div>`);
+    }
+
+    // 渲染姿势卡片
+    if (cards.poses.length > 0) {
+        const cardsHtml = cards.poses.map(p => `
+            <div class="chat-card" onclick="addToCart('pose',{id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">
+                <div class="card-emoji">${p.emoji}</div>
+                <div class="card-title">${p.name}</div>
+                <div class="card-meta">${p.people}人 · ${p.style}${p.hasSkeleton ? ' · 📸AI比对' : ''}</div>
+                <button class="card-add-btn" onclick="event.stopPropagation();addToCart('pose',{id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',hasSkeleton:${p.hasSkeleton||false}});updateCartBadge();">🛒 加购</button>
+            </div>
+        `).join('');
+        addChatMessage('ai', `<div style="font-size:12px;color:var(--text-light);margin-bottom:4px;">🕺 推荐姿势（点击加购）：</div><div class="chat-card-wrap">${cardsHtml}</div>`);
     }
 }
 

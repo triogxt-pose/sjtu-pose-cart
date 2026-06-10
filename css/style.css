@@ -173,7 +173,7 @@ body {
     height: auto;
     transform: translate(-50%, -50%);
     object-fit: cover;
-    filter: brightness(0.5) saturate(1.1);
+    filter: brightness(0.65) saturate(1.15);
     background: #001a33;
 }
 .cover-bg-video-overlay {
@@ -181,10 +181,10 @@ body {
     inset: 0;
     background: linear-gradient(
         160deg,
-        rgba(0, 26, 51, 0.55) 0%,
-        rgba(0, 51, 102, 0.4) 35%,
-        rgba(0, 81, 153, 0.45) 65%,
-        rgba(0, 34, 68, 0.55) 100%
+        rgba(0, 26, 51, 0.35) 0%,
+        rgba(0, 51, 102, 0.25) 35%,
+        rgba(0, 81, 153, 0.3) 65%,
+        rgba(0, 34, 68, 0.35) 100%
     );
     pointer-events: none;
 }
@@ -258,13 +258,13 @@ body {
     z-index: 2;
     width: 100%;
     max-width: 420px;
-    background: var(--glass-bg);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 28px;
     overflow: hidden;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
     animation: cardFloat 4s ease-in-out infinite;
 }
 @keyframes cardFloat {
@@ -283,14 +283,15 @@ body {
     width: 72px;
     height: 72px;
     margin: 0 auto 20px;
-    background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7));
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0, 81, 153, 0.15);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 .cover-logo img {
     width: 100%;
@@ -301,16 +302,15 @@ body {
 .cover-title {
     font-size: 34px;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--primary), #003d7a);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: #ffffff;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
     margin-bottom: 10px;
     letter-spacing: 2px;
     line-height: 1.3;
 }
 .cover-subtitle {
-    color: var(--text-secondary);
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
     font-size: 15px;
     margin-bottom: 28px;
     letter-spacing: 1px;
@@ -323,13 +323,14 @@ body {
     margin-bottom: 36px;
 }
 .cover-features span {
-    background: rgba(0, 81, 153, 0.07);
-    color: var(--primary);
+    background: rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.95);
     padding: 8px 16px;
     border-radius: 50px;
     font-size: 13px;
     font-weight: 500;
-    border: 1px solid rgba(0, 81, 153, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
 }
@@ -387,11 +388,11 @@ body {
 }
 
 .cover-hint {
-    color: var(--text-light);
+    color: rgba(255, 255, 255, 0.6);
     font-size: 13px;
     margin-top: 20px;
     letter-spacing: 0.5px;
-    opacity: 0.7;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* 校徽 loading 动画 */
@@ -1446,6 +1447,11 @@ body {
 }
 
 /* 文案卡片 */
+.copy-loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-light);
+}
 .result-copy-item {
     background: linear-gradient(135deg, #fafbfc, #f0f4f8);
     border: 1px solid var(--border);

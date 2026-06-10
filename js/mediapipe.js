@@ -191,55 +191,73 @@ let canvasCtx = null;
 // ===== 初始化 MediaPipe 相机 =====
 async function initMediaPipeCamera(pose) {
     currentPose = pose;
-    const container = document.getElementById('camera-container');
-    const statusBar = document.getElementById('camera-status');
-    if (!container) return;
+    const video = document.getElementById('mediapipe-video');
+    const canvas = document.getElementById('mediapipe-canvas');
+    const statusBar = document.getElementById('pose-match-status');
+    const thumb = document.getElementById('pose-thumbnail');
 
-    // 渲染相机UI
-    container.innerHTML = `
-        <video id="camera-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;"></video>
-        <canvas id="camera-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></canvas>
-        <div class="camera-overlay">
-            <div class="camera-guide">将身体对齐白色线框</div>
-        </div>
-        <div class="camera-controls">
-            <button class="cam-btn cam-back" onclick="stopCamera()">← 返回</button>
-            <button class="cam-btn cam-shutter" onclick="capturePhoto()">📸</button>
-            <button class="cam-btn cam-skeleton" onclick="toggleSkeleton()">🦴</button>
-        </div>
-        <div class="camera-thumbnail" id="camera-thumbnail">
-            <span style="font-size:32px;">${pose.emoji || '🕺'}</span>
-            <span style="font-size:11px;">${pose.name}</span>
-        </div>
-    `;
+    // 更新缩略图
+    if (thumb) {
+        thumb.innerHTML = `<span style="font-size:28px;">${pose.emoji || '🕺'}</span><span style="font-size:10px;display:block;">${pose.name}</span>`;
+    }
 
-    // 请求摄像头
+    // 请求摄像头（移动端优先后置摄像头，前置作为备选）
     try {
+        // 先尝试后置摄像头（大多数毕业照场景用后置）
         cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+            video: {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        }).catch(() => {
+            // 降级：尝试前置摄像头
+            return navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'user',
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            });
         });
-        const video = document.getElementById('camera-video');
-        video.srcObject = cameraStream;
 
-        const canvas = document.getElementById('camera-canvas');
-        canvasCtx = canvas.getContext('2d');
+        if (video) {
+            video.srcObject = cameraStream;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
+        }
 
-        video.addEventListener('loadedmetadata', () => {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            if (statusBar) statusBar.textContent = '准备就绪，将身体对齐白色线框';
-        });
+        if (canvas) {
+            canvasCtx = canvas.getContext('2d');
+        }
+
+        // 视频就绪后设置画布尺寸
+        if (video) {
+            video.addEventListener('loadedmetadata', () => {
+                if (canvas) {
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                }
+                if (statusBar) statusBar.textContent = '准备就绪，将身体对齐参考线框';
+            });
+        }
 
         // 尝试加载 MediaPipe
         await loadMediaPipe();
     } catch (err) {
+        console.warn('摄像头访问失败:', err.message);
         if (statusBar) statusBar.textContent = '摄像头权限被拒绝';
-        container.innerHTML += `
-            <div class="camera-permission-denied">
-                <p>📷 需要摄像头权限才能使用辅助拍摄功能</p>
-                <p>请在浏览器设置中允许摄像头访问</p>
-            </div>
-        `;
+        // 显示权限提示
+        const infoEl = document.querySelector('.mediapipe-info');
+        if (infoEl) {
+            infoEl.innerHTML = `
+                <p style="color:#e74c3c;">📷 需要摄像头权限才能使用辅助拍摄功能</p>
+                <p style="font-size:12px;color:rgba(255,255,255,0.6);">
+                    请在浏览器设置中允许摄像头访问，然后刷新页面重试
+                </p>
+                <button class="btn-primary" onclick="closeMediaPipe()" style="margin-top:12px;font-size:13px;padding:10px 24px;">← 返回</button>
+            `;
+        }
     }
 }
 
@@ -279,7 +297,7 @@ async function loadMediaPipe() {
 }
 
 function processFrame(pose) {
-    const video = document.getElementById('camera-video');
+    const video = document.getElementById('mediapipe-video');
     if (!video) return;
 
     async function detect() {
@@ -292,7 +310,7 @@ function processFrame(pose) {
 
 // ===== MediaPipe 结果处理 =====
 function onMediaPipeResults(results) {
-    const canvas = document.getElementById('camera-canvas');
+    const canvas = document.getElementById('mediapipe-canvas');
     if (!canvas || !canvasCtx) return;
 
     canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
@@ -397,29 +415,29 @@ function calculateMatchScore(landmarks) {
 
 // 更新匹配状态
 function updateMatchStatus(score) {
-    const statusBar = document.getElementById('camera-status');
+    const statusBar = document.getElementById('pose-match-status');
     if (!statusBar) return;
 
     if (score < MATCH_THRESHOLD) {
-        statusBar.textContent = '✅ 完美对齐！快按快门';
-        statusBar.className = 'camera-status matched';
+        statusBar.textContent = '✅ 完美对齐！';
+        statusBar.className = 'matched';
     } else if (score < MATCH_THRESHOLD * 1.5) {
-        statusBar.textContent = '接近了！再微调一下位置';
-        statusBar.className = 'camera-status close';
+        statusBar.textContent = '接近了！再微调一下';
+        statusBar.className = 'close';
     } else {
-        statusBar.textContent = '将身体对齐白色线框';
-        statusBar.className = 'camera-status';
+        statusBar.textContent = '将身体对齐参考线框';
+        statusBar.className = '';
     }
 }
 
 // ===== 简化渲染模式（MediaPipe 不可用时） =====
 function startSimpleRender() {
-    const canvas = document.getElementById('camera-canvas');
+    const canvas = document.getElementById('mediapipe-canvas');
     if (!canvas || !canvasCtx) return;
 
     function render() {
         if (!cameraStream) return;
-        const video = document.getElementById('camera-video');
+        const video = document.getElementById('mediapipe-video');
         if (!video || video.readyState < 2) {
             animationFrameId = requestAnimationFrame(render);
             return;
@@ -449,13 +467,13 @@ function startSimpleRender() {
 
 // ===== 拍照 =====
 function capturePhoto() {
-    const video = document.getElementById('camera-video');
-    const canvas = document.getElementById('camera-canvas');
+    const video = document.getElementById('mediapipe-video');
+    const canvas = document.getElementById('mediapipe-canvas');
     if (!video || !canvas) return;
 
     const captureCanvas = document.createElement('canvas');
-    captureCanvas.width = video.videoWidth;
-    captureCanvas.height = video.videoHeight;
+    captureCanvas.width = video.videoWidth || 640;
+    captureCanvas.height = video.videoHeight || 480;
     const ctx = captureCanvas.getContext('2d');
 
     // 绘制视频帧
@@ -486,13 +504,13 @@ function stopCamera() {
     canvasCtx = null;
     mediaPipeReady = false;
     currentPose = null;
-    goBack();
+    // 注意：不在此处关闭 modal，由 closeMediaPipe() 统一处理
 }
 
 // ===== 切换骨骼显示 =====
 let showSkeleton = true;
 function toggleSkeleton() {
     showSkeleton = !showSkeleton;
-    const canvas = document.getElementById('camera-canvas');
+    const canvas = document.getElementById('mediapipe-canvas');
     if (canvas) canvas.style.display = showSkeleton ? 'block' : 'none';
 }

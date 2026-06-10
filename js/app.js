@@ -577,17 +577,30 @@
         const container = document.getElementById('result-copy');
         if (!container) return;
 
-        const remoteCopy = await generateAICopyText(locations, allPoses);
+        // 显示加载动画
+        container.innerHTML = `
+            <div class="copy-loading">
+                <div class="typing-dots" style="color:var(--primary);font-size:14px;">
+                    AI 正在为你生成朋友圈文案<span>.</span><span>.</span><span>.</span>
+                </div>
+            </div>
+        `;
+
+        const style = allPoses.length > 0 ? allPoses[0].style || '经典' : '经典';
+        const remoteCopy = await generateAICopyText(locations, allPoses, style);
 
         if (remoteCopy) {
-            const parts = remoteCopy.split(/\n(?=💌|🎭|📋)/);
-            container.innerHTML = parts.map(part => {
+            // 按风格分割，过滤空白项
+            const parts = remoteCopy.split(/\n(?=💌|🎭|📋)/).filter(p => p.trim());
+            // 只取前 3 个风格
+            const validParts = parts.slice(0, 3);
+            container.innerHTML = validParts.map(part => {
                 const lines = part.trim().split('\n');
-                const style = lines[0] || '';
-                const text = lines.slice(1).join('\n') || part;
+                const styleName = lines[0] || '';
+                const text = lines.slice(1).join('\n').trim() || part.trim();
                 return `
                     <div class="result-copy-item">
-                        <div class="copy-style">${style}</div>
+                        <div class="copy-style">${styleName}</div>
                         <div class="copy-text">${text}</div>
                         <button class="copy-btn" onclick="copyText('${escapeForCopy(text)}')">📋 复制</button>
                     </div>
@@ -601,6 +614,7 @@
 
             container.innerHTML = styles.map(key => {
                 const templates = COPY_TEMPLATES[key];
+                if (!templates || templates.length === 0) return '';
                 const tpl = templates[Math.floor(Math.random() * templates.length)];
                 const text = tpl.text
                     .replace('{year}', year)
@@ -613,7 +627,7 @@
                         <button class="copy-btn" onclick="copyText('${escapeForCopy(text)}')">📋 复制</button>
                     </div>
                 `;
-            }).join('');
+            }).filter(Boolean).join('');
         }
     }
 
