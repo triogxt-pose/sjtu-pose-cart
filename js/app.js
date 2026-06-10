@@ -49,8 +49,10 @@
         initLoadingAnimation();
     }
 
-    // 视频背景
-    const coverVideos = ['assets/images/cover/siyuan_lake.mp4', 'assets/images/cover/temple_gate.mp4', 'assets/images/cover/triumphal_arch.mp4'];
+    // 视频背景（从资源配置读取，支持 CDN/本地切换）
+    const coverVideos = (typeof AssetConfig !== 'undefined' && AssetConfig.getCoverVideos)
+        ? AssetConfig.getCoverVideos()
+        : ['assets/images/cover/siyuan_lake.mp4', 'assets/images/cover/temple_gate.mp4', 'assets/images/cover/triumphal_arch.mp4'];
 
     function initCoverVideo() {
         const video = document.getElementById('cover-bg-video');
@@ -796,7 +798,6 @@
     window.startMediaPipe = startMediaPipe;
     window.openMediaPipe = openMediaPipe;
     window.closeMediaPipe = closeMediaPipe;
-    window.switchTargetPose = switchTargetPose;
     window.openPosePicker = openPosePicker;
     window.closePosePicker = closePosePicker;
     window.switchToPose = switchToPose;

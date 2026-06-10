@@ -228,3 +228,29 @@ const AI_GREETINGS = [
     '欢迎来到毕业照选品大厅！🛒\n告诉我你们几个人、想要什么风格，我帮你搭配～',
     '毕业照怎么拍？交给我！📸\n先说说你们有几个人，喜欢什么风格？'
 ];
+
+// ===== 资源路径后处理（支持 Cloudflare R2 CDN 切换） =====
+(function resolveAssetPaths() {
+    // 如果 AssetConfig 未加载，保持原路径
+    if (typeof AssetConfig === 'undefined' || !AssetConfig.resolvePath) {
+        return;
+    }
+
+    // 解析所有地标图片路径
+    if (typeof LOCATIONS !== 'undefined' && Array.isArray(LOCATIONS)) {
+        LOCATIONS.forEach((loc) => {
+            if (loc.img) {
+                loc.img = AssetConfig.resolvePath(loc.img);
+            }
+        });
+    }
+
+    // 解析所有姿势图片路径
+    if (typeof POSES !== 'undefined' && Array.isArray(POSES)) {
+        POSES.forEach((pose) => {
+            if (pose.img) {
+                pose.img = AssetConfig.resolvePath(pose.img);
+            }
+        });
+    }
+})();

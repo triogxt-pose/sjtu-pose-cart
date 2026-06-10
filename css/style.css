@@ -1067,7 +1067,10 @@ body {
 #mediapipe-video {
     width: 100%;
     max-width: 480px;
+    height: auto;
     transform: scaleX(-1);
+    object-fit: contain;
+    display: block;
 }
 #mediapipe-canvas {
     position: absolute;
@@ -1075,6 +1078,10 @@ body {
     left: 50%;
     transform: translate(-50%, -50%) scaleX(-1);
     pointer-events: none;
+    max-width: 480px;
+    width: 100%;
+    height: auto;
+    z-index: 5;
 }
 
 /* 辅助拍摄虚线框 */
@@ -1972,8 +1979,17 @@ body {
     color: white; font-size: 12px; backdrop-filter: blur(8px); z-index: 10;
     transition: all 0.3s;
 }
-.camera-status.matched { background: rgba(46,204,113,0.8); }
+.camera-status.matched { background: rgba(46,204,113,0.8); animation: pulse-success 1.8s ease-in-out infinite; }
 .camera-status.close { background: rgba(251,196,18,0.8); color: var(--text); }
+.camera-status.far { background: rgba(231,76,60,0.8); }
+@keyframes pulse-success {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.03); }
+}
+/* 姿势匹配状态（更醒目的显示） */
+#pose-match-status.matched { color: #2ecc71; font-weight: 600; }
+#pose-match-status.close { color: #f1c40f; font-weight: 600; }
+#pose-match-status.far { color: #ff7675; font-weight: 500; }
 
 /* ===== 页面系统 ===== */
 .page { display: none; }
