@@ -690,7 +690,10 @@
         modal.classList.add('show');
         const thumb = document.getElementById('pose-thumbnail');
         if (thumb) {
-            thumb.innerHTML = `<span style="font-size:32px;">${pose.emoji || '🕺'}</span><span style="font-size:10px;">${pose.name}</span>`;
+            thumb.innerHTML = `
+                <img src="${pose.img || ''}" alt="${pose.name}" onerror="this.style.display='none';this.nextElementSibling.style.height='100%';">
+                <span class="thumb-label">${pose.name}</span>
+            `;
         }
         initMediaPipeCamera(pose);
     }
@@ -702,13 +705,16 @@
     }
 
     function switchTargetPose() {
-        // 循环切换经典照片姿势
-        const vintagePoses = POSES.filter(p => p.hasSkeleton);
-        if (vintagePoses.length === 0) return;
+        // 轮换购物车中有经典照片（hasSkeleton）的姿势
+        const cartPoses = cartItems.poses.filter(p => p.hasSkeleton);
+        if (cartPoses.length === 0) {
+            showToast('购物车中没有经典照片姿势，请先加购经典照片');
+            return;
+        }
         stopCamera();
         const currentId = currentPose?.id;
-        const idx = vintagePoses.findIndex(p => p.id === currentId);
-        const next = vintagePoses[(idx + 1) % vintagePoses.length];
+        const idx = cartPoses.findIndex(p => p.id === currentId);
+        const next = cartPoses[(idx + 1) % cartPoses.length];
         openMediaPipe(next);
     }
 

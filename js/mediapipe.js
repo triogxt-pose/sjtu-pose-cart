@@ -196,9 +196,12 @@ async function initMediaPipeCamera(pose) {
     const statusBar = document.getElementById('pose-match-status');
     const thumb = document.getElementById('pose-thumbnail');
 
-    // 更新缩略图
+    // 更新右下角缩略图：显示原照片 + 名字
     if (thumb) {
-        thumb.innerHTML = `<span style="font-size:28px;">${pose.emoji || '🕺'}</span><span style="font-size:10px;display:block;">${pose.name}</span>`;
+        thumb.innerHTML = `
+            <img src="${pose.img || ''}" alt="${pose.name}" onerror="this.style.display='none';this.nextElementSibling.style.height='100%';">
+            <span class="thumb-label">${pose.name}</span>
+        `;
     }
 
     // 请求摄像头（移动端优先后置摄像头，前置作为备选）
@@ -313,6 +316,14 @@ function onMediaPipeResults(results) {
     const canvas = document.getElementById('mediapipe-canvas');
     if (!canvas || !canvasCtx) return;
 
+    // 同步 canvas CSS 尺寸到视频渲染尺寸
+    syncCanvasSize(canvas);
+
+    if (!showSkeleton) {
+        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+    }
+
     canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 绘制参考骨骼线框（白色）
@@ -328,36 +339,77 @@ function onMediaPipeResults(results) {
     }
 }
 
-// 绘制参考骨骼线框
+// ===== 同步 canvas CSS 尺寸到视频渲染尺寸 =====
+function syncCanvasSize(canvas) {
+    const video = document.getElementById('mediapipe-video');
+    if (!video || !canvas) return;
+    const rect = video.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
+    }
+}
+
+// 绘制参考骨骼线框（绘制模板中所有人的骨骼，不同颜色区分）
 function drawReferenceSkeleton(ctx, w, h) {
     if (!currentPose?.skeleton) return;
     const template = SKELETON_TEMPLATES[currentPose.skeleton];
     if (!template) return;
 
-    const personKey = Object.keys(template)[0]; // 取第一个人
-    const keypoints = template[personKey];
+    const personColors = [
+        'rgba(255, 255, 255, 0.9)',   // 白色为主
+        'rgba(255, 220, 100, 0.85)',  // 金色
+        'rgba(100, 200, 255, 0.85)',  // 天蓝
+        'rgba(255, 150, 150, 0.85)',  // 粉红
+        'rgba(150, 255, 150, 0.85)',  // 绿色
+    ];
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.lineWidth = 3;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    const personKeys = Object.keys(template);
+    personKeys.forEach((personKey, personIdx) => {
+        const keypoints = template[personKey];
+        const color = personColors[personIdx % personColors.length];
 
-    // 绘制连接线
-    SKELETON_CONNECTIONS.forEach(([from, to]) => {
-        const p1 = keypoints[from];
-        const p2 = keypoints[to];
-        if (p1 && p2) {
+        // 外发光（粗线）
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.lineWidth = 7;
+
+        SKELETON_CONNECTIONS.forEach(([from, to]) => {
+            const p1 = keypoints[from];
+            const p2 = keypoints[to];
+            if (p1 && p2) {
+                ctx.beginPath();
+                ctx.moveTo(p1.x * w, p1.y * h);
+                ctx.lineTo(p2.x * w, p2.y * h);
+                ctx.stroke();
+            }
+        });
+
+        // 内层线
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        SKELETON_CONNECTIONS.forEach(([from, to]) => {
+            const p1 = keypoints[from];
+            const p2 = keypoints[to];
+            if (p1 && p2) {
+                ctx.beginPath();
+                ctx.moveTo(p1.x * w, p1.y * h);
+                ctx.lineTo(p2.x * w, p2.y * h);
+                ctx.stroke();
+            }
+        });
+
+        // 关节点（外层阴影 + 内层填充）
+        Object.values(keypoints).forEach(pt => {
             ctx.beginPath();
-            ctx.moveTo(p1.x * w, p1.y * h);
-            ctx.lineTo(p2.x * w, p2.y * h);
-            ctx.stroke();
-        }
-    });
+            ctx.arc(pt.x * w, pt.y * h, 8, 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.fill();
 
-    // 绘制关节点
-    Object.values(keypoints).forEach(pt => {
-        ctx.beginPath();
-        ctx.arc(pt.x * w, pt.y * h, 5, 0, 2 * Math.PI);
-        ctx.fill();
+            ctx.beginPath();
+            ctx.arc(pt.x * w, pt.y * h, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = color.replace('0.9', '1').replace('0.85', '1');
+            ctx.fill();
+        });
     });
 }
 
@@ -443,22 +495,27 @@ function startSimpleRender() {
             return;
         }
 
+        // 同步 canvas CSS 尺寸
+        syncCanvasSize(canvas);
+
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 绘制参考线框
-        drawReferenceSkeleton(canvasCtx, canvas.width, canvas.height);
+        if (showSkeleton) {
+            // 绘制参考骨骼线框
+            drawReferenceSkeleton(canvasCtx, canvas.width, canvas.height);
 
-        // 绘制虚线辅助框
-        canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        canvasCtx.lineWidth = 2;
-        canvasCtx.setLineDash([10, 8]);
-        canvasCtx.strokeRect(
-            canvas.width * 0.25, canvas.height * 0.1,
-            canvas.width * 0.5, canvas.height * 0.7
-        );
-        canvasCtx.setLineDash([]);
+            // 绘制虚线辅助框
+            canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            canvasCtx.lineWidth = 2;
+            canvasCtx.setLineDash([10, 8]);
+            canvasCtx.strokeRect(
+                canvas.width * 0.2, canvas.height * 0.1,
+                canvas.width * 0.6, canvas.height * 0.75
+            );
+            canvasCtx.setLineDash([]);
+        }
 
         animationFrameId = requestAnimationFrame(render);
     }
@@ -512,5 +569,7 @@ let showSkeleton = true;
 function toggleSkeleton() {
     showSkeleton = !showSkeleton;
     const canvas = document.getElementById('mediapipe-canvas');
-    if (canvas) canvas.style.display = showSkeleton ? 'block' : 'none';
+    if (canvas) canvas.style.display = showSkeleton ? '' : 'none';
+    const btn = document.getElementById('btn-toggle-skeleton');
+    if (btn) btn.textContent = showSkeleton ? '👁️' : '👁️‍🗨️';
 }
