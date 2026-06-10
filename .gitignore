@@ -10,25 +10,10 @@ worker/.dev.vars
 worker/.wrangler/
 worker/node_modules/
 
-# ===== 媒体资源（图片和视频太大，本地存放） =====
-# 视频文件
-*.mp4
-*.mov
-*.avi
-
-# 图片文件（大文件）
-assets/images/cover/*.jpg
-assets/images/cover/*.png
-assets/images/landmarks/*.jpg
-assets/images/landmarks/*.png
-assets/images/poses/**/*.jpg
-assets/images/poses/**/*.png
-assets/images/logo/*.png
-assets/images/logo/*.svg
-
-# 保留目录结构和说明文件
-!assets/images/**/.gitkeep
-!assets/images/**/README.txt
+# ===== 媒体资源 =====
+# 注意：以下媒体文件必须提交到 GitHub，否则 GitHub Pages 部署后无法显示
+# 视频文件（首页背景，2-3MB 每个，6MB 总和可接受）
+# 图片文件（封面、姿势、人物等，全部必须上传到 GitHub）
 
 # ===== 依赖 =====
 node_modules/
