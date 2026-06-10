@@ -199,10 +199,13 @@
         <div class="tutorial">
             <h3>💡 使用指南</h3>
             <ol>
-                <li>选择一个你想模仿的经典姿势</li>
-                <li>左侧显示参考照片+骨架，右侧是你的实时画面</li>
-                <li>调整身体位置，让右侧的骨架与左侧匹配</li>
-                <li>状态栏变绿时说明姿势匹配，可以按快门！</li>
+                <li>选择一个你想模仿的经典姿势（左侧参考骨架已离线加载，无需网络）</li>
+                <li>点击下方 <b>"启动摄像头"</b> 按钮授权摄像头访问</li>
+                <li>右侧画面会实时显示你的摄像头内容</li>
+                <li>AI 骨架检测需要从 Google 下载模型，如果骨架不显示：<br>
+                    → <b>请开启科学上网工具</b>，或使用手机 4G/5G 热点切换网络<br>
+                    → <b>即使 AI 不可用，也能拍照</b>（只是无法实时对比姿势）</li>
+                <li>匹配成功后，按中间圆形 <b>快门按钮</b> 拍照下载</li>
             </ol>
         </div>
     </div>
@@ -320,6 +323,8 @@ const refOverlayCtx = refOverlay.getContext('2d');
 
 // ============================================================
 //  初始化：渲染姿势选择器 + 绘制参考骨架
+//  ✅ 改进：页面加载时不自动下载 AI 模型（避免国内网络卡住）
+//  点击"启动摄像头"时才尝试加载模型
 // ============================================================
 function initApp() {
     // 1. 渲染姿势选择器
@@ -340,76 +345,83 @@ function initApp() {
         });
     });
 
-    // 2. 绘制参考骨架
+    // 2. 绘制参考骨架（离线模板，不需要网络）
     drawReferenceSkeleton();
     updateRefInfo();
 
-    // 3. 检测 MediaPipe 库是否可用
+    // 3. 检查 MediaPipe 库是否已加载（只检查，不下载模型）
     if (window.PoseLandmarker && window.FilesetResolver) {
-        document.getElementById('network-badge').textContent = '库已加载';
+        document.getElementById('network-badge').textContent = '📦 待加载（点击启动摄像头）';
         document.getElementById('network-badge').className = 'network-badge online';
-        // 尝试初始化（会在用户点击启动摄像头时再次尝试）
-        initMediaPipe();
     } else {
-        document.getElementById('network-badge').textContent = '库加载失败';
+        document.getElementById('network-badge').textContent = '⚠️ 库未加载';
         document.getElementById('network-badge').className = 'network-badge offline';
-        document.getElementById('loading').querySelector('.loading-text').innerHTML =
-            '⚠️ MediaPipe 库无法加载<br><small>这通常是因为无法访问 jsdelivr CDN<br>你仍可以查看参考照片的骨架，但实时匹配不可用</small>';
-        setTimeout(() => document.getElementById('loading').style.display = 'none', 2000);
     }
+
+    // 4. ✅ 立即显示界面（不再阻塞用户）
+    document.getElementById('loading').style.display = 'none';
+
+    // 5. 显示摄像头初始状态
+    document.getElementById('match-status').textContent = '📷 点击下方"启动摄像头"开始';
+    document.getElementById('camera-info').textContent = '等待启动';
 }
 
 // ============================================================
 //  初始化 MediaPipe PoseLandmarker
+//  ✅ 改进：带 10 秒超时保护，不再阻塞页面
+//  返回：true = 成功加载模型；false = 失败（摄像头仍可使用）
 // ============================================================
 async function initMediaPipe() {
-    try {
-        if (!window.FilesetResolver || !window.PoseLandmarker) {
-            throw new Error('Tasks Vision 库不可用');
+    if (poseLandmarkerReady) return true;
+
+    document.getElementById('network-badge').textContent = '⏳ 正在加载 AI 模型...';
+
+    return new Promise(async (resolve) => {
+        const timeout = setTimeout(() => {
+            document.getElementById('network-badge').textContent = '⏰ 超时（请用科学上网）';
+            document.getElementById('network-badge').className = 'network-badge offline';
+            resolve(false);
+        }, 10000);
+
+        try {
+            if (!window.FilesetResolver || !window.PoseLandmarker) {
+                clearTimeout(timeout);
+                document.getElementById('network-badge').textContent = '⚠️ 库未加载';
+                document.getElementById('network-badge').className = 'network-badge offline';
+                resolve(false);
+                return;
+            }
+
+            const vision = await window.FilesetResolver.forVisionTasks(
+                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+            );
+
+            poseLandmarker = await window.PoseLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+                    delegate: 'GPU'
+                },
+                runningMode: 'VIDEO',
+                numPoses: 4,
+                minPoseDetectionConfidence: 0.5,
+                minPosePresenceConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            clearTimeout(timeout);
+            poseLandmarkerReady = true;
+            document.getElementById('network-badge').textContent = '✓ AI 模型就绪';
+            document.getElementById('network-badge').className = 'network-badge online';
+            resolve(true);
+
+        } catch (err) {
+            clearTimeout(timeout);
+            console.warn('MediaPipe 初始化失败（不影响摄像头拍照）:', err);
+            document.getElementById('network-badge').textContent = '⚠️ AI 不可用（仍可拍照）';
+            document.getElementById('network-badge').className = 'network-badge offline';
+            resolve(false);
         }
-
-        const vision = await window.FilesetResolver.forVisionTasks(
-            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-        );
-
-        poseLandmarker = await window.PoseLandmarker.createFromOptions(vision, {
-            baseOptions: {
-                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
-                delegate: 'GPU'
-            },
-            runningMode: 'VIDEO',
-            numPoses: 4,
-            minPoseDetectionConfidence: 0.5,
-            minPosePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        poseLandmarkerReady = true;
-        document.getElementById('network-badge').textContent = '✓ AI 模型就绪';
-        document.getElementById('network-badge').className = 'network-badge online';
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('btn-start').disabled = false;
-
-    } catch (err) {
-        console.error('MediaPipe 初始化失败:', err);
-        document.getElementById('network-badge').textContent = '模型加载失败';
-        document.getElementById('network-badge').className = 'network-badge offline';
-
-        // 降级提示：模型文件来自 storage.googleapis.com，国内可能无法访问
-        document.getElementById('loading').querySelector('.loading-text').innerHTML =
-            '⚠️ AI 模型下载失败<br>' +
-            '<small>这通常是因为无法访问 storage.googleapis.com（谷歌云存储）<br>' +
-            '解决方案：<br>' +
-            '1️⃣ 使用科学上网工具（推荐）<br>' +
-            '2️⃣ 使用手机 4G/5G 热点切换网络<br>' +
-            '3️⃣ 仍可查看参考骨架+拍照，但实时匹配不可用</small>';
-
-        // 3秒后隐藏加载层，允许使用基础功能
-        setTimeout(() => {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('btn-start').disabled = false;
-        }, 3000);
-    }
+    });
 }
 
 // ============================================================
@@ -604,10 +616,14 @@ function drawPersonSkeleton(ctx, person, offsetX, offsetY, areaW, areaH, personI
 
 // ============================================================
 //  启动/停止摄像头
+//  ✅ 改进：先打开摄像头让用户看到画面，然后后台尝试加载模型
 // ============================================================
 async function startCamera() {
     try {
-        document.getElementById('camera-info').textContent = '请求权限...';
+        document.getElementById('camera-info').textContent = '请求摄像头权限...';
+        document.getElementById('match-status').textContent = '📷 正在打开摄像头...';
+
+        // 1️⃣ 先打开摄像头（这一步不需要 AI 模型）
         cameraStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: { ideal: 'user' }, width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: false
@@ -617,7 +633,7 @@ async function startCamera() {
         video.setAttribute('playsinline', '');
         video.muted = true;
 
-        await new Promise((resolve, reject) => {
+        await new Promise((resolve) => {
             const timeout = setTimeout(resolve, 5000);
             video.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
         });
@@ -629,15 +645,33 @@ async function startCamera() {
         document.getElementById('btn-stop').disabled = false;
         document.getElementById('btn-capture').disabled = false;
         document.getElementById('match-bar').style.display = 'block';
+        document.getElementById('match-status').textContent = '✅ 摄像头已开启';
+        document.getElementById('match-status').style.background = 'rgba(46,204,113,0.7)';
 
-        // 开始实时检测循环
-        startDetectionLoop();
+        // 2️⃣ 后台异步加载 AI 模型（不阻塞摄像头画面）
+        //  即使失败，摄像头画面和拍照功能仍然可用
+        (async () => {
+            const aiSuccess = await initMediaPipe();
+
+            if (aiSuccess) {
+                document.getElementById('match-status').textContent = '🎯 AI 就绪，检测你的姿势...';
+                document.getElementById('match-status').style.background = 'rgba(0,0,0,0.7)';
+            } else {
+                // 模型加载失败但摄像头已开
+                document.getElementById('match-status').textContent =
+                    '✅ 摄像头已开启（⚠️ AI 模型不可用 - 请检查网络）';
+                document.getElementById('match-status').style.background = 'rgba(241,196,15,0.7)';
+            }
+
+            // 3️⃣ 启动检测循环（如果 AI 不可用，会只绘制画面不做检测）
+            startDetectionLoop();
+        })();
 
     } catch (err) {
         console.error('摄像头启动失败:', err);
         document.getElementById('camera-info').textContent = '❌ 权限被拒绝';
-        document.getElementById('match-status').textContent =
-            '❌ 无法访问摄像头<br>请检查浏览器设置';
+        document.getElementById('match-status').innerHTML =
+            '❌ 无法访问摄像头<br><small>请在浏览器设置中允许摄像头访问</small>';
         document.getElementById('match-status').style.background = 'rgba(231,76,60,0.85)';
     }
 }
@@ -659,9 +693,11 @@ function stopCamera() {
 
 // ============================================================
 //  实时检测循环
+//  ✅ 改进：AI 未就绪时显示提示文字，不报错
 // ============================================================
 function startDetectionLoop() {
     let lastDetectTime = 0;
+    let aiShownOnce = false;  // 防止重复设置状态
 
     function loop(now) {
         if (!cameraStream) return;
@@ -676,9 +712,38 @@ function startDetectionLoop() {
 
         cameraCtx.clearRect(0, 0, cameraCanvas.width, cameraCanvas.height);
 
-        // 检测（限制频率）
+        // === AI 模型尚未就绪：只显示提示文字，不做骨骼检测 ===
+        if (!poseLandmarkerReady) {
+            if (!aiShownOnce) {
+                // 绘制提示文字（在视频上叠加）
+                if (cameraCanvas.width > 0) {
+                    cameraCtx.font = '18px sans-serif';
+                    cameraCtx.textAlign = 'center';
+                    cameraCtx.fillStyle = 'rgba(255, 220, 100, 0.9)';
+                    cameraCtx.fillText(
+                        '⏳ AI 模型加载中（约需10秒，或请检查网络）...',
+                        cameraCanvas.width / 2,
+                        40
+                    );
+                    cameraCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                    cameraCtx.font = '14px sans-serif';
+                    cameraCtx.fillText(
+                        '若无骨架显示，请开启科学上网后刷新页面',
+                        cameraCanvas.width / 2,
+                        62
+                    );
+                }
+            }
+            // 不调用 updateMatchStatus，保持当前状态
+            animationFrame = requestAnimationFrame(loop);
+            return;
+        }
+
+        // === AI 模型就绪：进行骨骼检测 ===
+        if (!aiShownOnce) aiShownOnce = true;
+
         let landmarks = null;
-        if (poseLandmarkerReady && poseLandmarker && video.readyState >= 2 && (now - lastDetectTime) >= 40) {
+        if (poseLandmarker && video.readyState >= 2 && (now - lastDetectTime) >= 40) {
             try {
                 const result = poseLandmarker.detectForVideo(video, now);
                 if (result && result.landmarks) landmarks = result.landmarks;
