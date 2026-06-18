@@ -57,17 +57,11 @@
 3. Source 选择 `main` 分支，目录选择 `/ (root)`
 4. 保存后等待几分钟即可通过 `https://你的用户名.github.io/仓库名/` 访问
 
-## 待完成事项
-
-- [ ] 上传校园景点照片到 `assets/images/landmarks/`
-- [ ] 上传姿势训练照片到 `assets/images/poses/`
-- [ ] 配置LLM API密钥（chat.js 中的 LLM_CONFIG）
-- [ ] 为老照片姿势提取MediaPipe骨骼数据
-
 ## 参考代码
 
-本项目参考了课程中的以下技术：
-- MediaPipe 手部/姿态识别（chapter_5_demo/MediaPipe）
-- YOLO 目标检测（chapter_5_demo/YOLO_stu）
-- LLM 对话集成（chapter_06_demo/Gradio-YOLO-LLM_stu）
-- 图像分类/迁移学习（chapter_04_demo/classification_customized）
+本项目核心技术：
+- **MediaPipe Pose Landmarker** — 33 关键点人体姿态检测，实时骨架比对与匹配度评分
+- **LLM API（OpenAI 兼容）** — AI 拍摄助手对话、智能路线规划、朋友圈文案生成
+- **Web Speech API** — 浏览器内置语音识别，支持语音输入
+- **SortableJS** — 拖拽排序，姿势与地点自由组合
+- **Canvas API** — 骨骼线框叠加绘制、照片合成、实时镜像

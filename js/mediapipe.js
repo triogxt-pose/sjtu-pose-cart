@@ -22,6 +22,7 @@
 
     // ============ 骨骼连接关系 ============
     const SKELETON_CONNECTIONS = [
+        [0, 11], [0, 12],
         [11, 12], [11, 23], [12, 24], [23, 24],
         [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
         [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
@@ -249,6 +250,28 @@
 
             ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
+            // 先绘制参考骨架（经典姿势模板，白色虚线）—— 不受 AI 加载影响
+            if (currentPose && currentPose.skeleton) {
+                const template = getSkeletonTemplate(currentPose.skeleton);
+                if (template && template.persons) {
+                    template.persons.forEach((person, idx) => {
+                        drawPersonSkeleton(ctx, person, 0, 0, canvasEl.width, canvasEl.height, idx, true);
+                    });
+                }
+            }
+
+            // AI 模型未就绪时显示提示
+            if (!videoLandmarkerReady) {
+                const statusEl = document.getElementById('pose-match-status');
+                if (statusEl && !statusEl._aiLoadingShown) {
+                    statusEl._aiLoadingShown = true;
+                    statusEl.textContent = '⏳ AI 模型加载中...（参考骨架已显示）';
+                    statusEl.style.color = '#f1c40f';
+                }
+                animationFrameId = requestAnimationFrame(loop);
+                return;
+            }
+
             let landmarks = null;
             if (videoLandmarkerReady && poseLandmarkerVideo && videoEl.readyState >= 2 && (now - lastDetectionTime) >= 40) {
                 try {
@@ -295,19 +318,31 @@
 
     // ============ 初始化 MediaPipe ============
     async function initPoseLandmarker() {
+        // 等待 module script 加载完成（如果还没加载）
+        if (!window._mediapipeModuleReady) {
+            console.log('[MediaPipe] 等待 Vision 库加载...');
+            await new Promise((resolve) => {
+                const timeout = setTimeout(resolve, 5000);
+                window.addEventListener('mediapipe-module-ready', () => {
+                    clearTimeout(timeout);
+                    resolve();
+                }, { once: true });
+            });
+        }
+
         if (!window.FilesetResolver || !window.PoseLandmarker) {
-            console.warn('[MediaPipe] Tasks Vision 库不可用');
+            console.warn('[MediaPipe] Tasks Vision 库不可用（请通过 HTTP 方式访问此页面）');
             return false;
         }
 
         try {
             const vision = await window.FilesetResolver.forVisionTasks(
-                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+                'js/mediapipe/wasm'
             );
 
             poseLandmarkerVideo = await window.PoseLandmarker.createFromOptions(vision, {
                 baseOptions: {
-                    modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+                    modelAssetPath: 'models/pose_landmarker_lite.task',
                     delegate: 'GPU'
                 },
                 runningMode: 'VIDEO',
@@ -343,11 +378,18 @@
             });
             try { await videoEl.play(); } catch (e) { /* 忽略 */ }
 
+            // 先启动检测循环（参考骨架立即显示，不受 AI 加载影响）
+            startDetectionLoop(videoEl, canvasEl);
+
+            // 后台加载 AI 模型
             if (!videoLandmarkerReady) {
-                await initPoseLandmarker();
+                initPoseLandmarker().then(success => {
+                    if (success) {
+                        console.log('[MediaPipe] AI 模型就绪，开始姿势检测');
+                    }
+                });
             }
 
-            startDetectionLoop(videoEl, canvasEl);
             return true;
         } catch (err) {
             console.error('[MediaPipe] 摄像头启动失败:', err);

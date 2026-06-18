@@ -5,10 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>📸 镜面拍照辅助工具 - 交大毕业照购物车</title>
     <link rel="stylesheet" href="css/style.css">
-    <!-- MediaPipe Tasks Vision 核心库 -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.js"></script>
-    <!-- 离线骨骼模板（所有经典照片的坐标已硬编码） -->
-    <script src="js/skeleton-templates.js"></script>
+    <!-- 离线骨骼模板（所有经典照片的坐标已硬编码）使用 defer 避免阻塞页面渲染 -->
+    <script src="js/skeleton-templates.js" defer></script>
+    <!-- 加载 MediaPipe Vision 库（ES 模块方式，通过 HTTP 访问时有效） -->
+    <script type="module">
+        import { PoseLandmarker, FilesetResolver } from './js/mediapipe/vision_bundle.mjs';
+        window.PoseLandmarker = PoseLandmarker;
+        window.FilesetResolver = FilesetResolver;
+        window._mediapipeModuleReady = true;
+        console.log('✅ MediaPipe Vision 库加载成功（module script）');
+        // 触发自定义事件，通知其他脚本库已就绪
+        window.dispatchEvent(new CustomEvent('mediapipe-module-ready'));
+    </script>
 
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -178,7 +186,7 @@
         <div class="loading-spinner"></div>
         <div class="loading-text">
             正在准备姿势匹配工具...
-            <small>首次使用需要下载 AI 模型（约 10MB），请确保网络畅通</small>
+            <small>首次使用需要加载 AI 骨骼检测模型（约 5.5MB，本地加载）</small>
         </div>
     </div>
 
@@ -202,9 +210,8 @@
                 <li>选择一个你想模仿的经典姿势（左侧参考骨架已离线加载，无需网络）</li>
                 <li>点击下方 <b>"启动摄像头"</b> 按钮授权摄像头访问</li>
                 <li>右侧画面会实时显示你的摄像头内容</li>
-                <li>AI 骨架检测需要从 Google 下载模型，如果骨架不显示：<br>
-                    → <b>请开启科学上网工具</b>，或使用手机 4G/5G 热点切换网络<br>
-                    → <b>即使 AI 不可用，也能拍照</b>（只是无法实时对比姿势）</li>
+                <li>AI 骨架检测使用本地模型，无需联网</li>
+                <li>即使 AI 不可用，也能拍照（只是无法实时对比姿势）</li>
                 <li>匹配成功后，按中间圆形 <b>快门按钮</b> 拍照下载</li>
             </ol>
         </div>
@@ -270,9 +277,72 @@
 
 <script>
 // ============================================================
+//  动态加载 MediaPipe 库（ES 模块格式，不能用普通 script 标签）
+// ============================================================
+let mediapipeLibReady = false;
+(async function loadMediaPipeLib() {
+    // 如果 module script 已经加载了库，直接使用
+    if (window._mediapipeModuleReady && window.PoseLandmarker && window.FilesetResolver) {
+        mediapipeLibReady = true;
+        const badge = document.getElementById('network-badge');
+        if (badge) {
+            badge.textContent = '📦 待加载（点击启动摄像头）';
+            badge.className = 'network-badge online';
+        }
+        console.log('MediaPipe 库已通过 module script 加载');
+        return;
+    }
+
+    // 等待 module script 加载完成（最多等 3 秒）
+    if (!window._mediapipeModuleReady) {
+        await new Promise((resolve) => {
+            const timeout = setTimeout(resolve, 3000);
+            window.addEventListener('mediapipe-module-ready', () => {
+                clearTimeout(timeout);
+                resolve();
+            }, { once: true });
+        });
+    }
+
+    if (window._mediapipeModuleReady && window.PoseLandmarker && window.FilesetResolver) {
+        mediapipeLibReady = true;
+        const badge = document.getElementById('network-badge');
+        if (badge) {
+            badge.textContent = '📦 待加载（点击启动摄像头）';
+            badge.className = 'network-badge online';
+        }
+        console.log('MediaPipe 库加载成功（等待 module script）');
+        return;
+    }
+
+    // 降级：尝试动态 import（兼容某些场景）
+    try {
+        const mod = await import('js/mediapipe/vision_bundle.mjs');
+        window.PoseLandmarker = mod.PoseLandmarker;
+        window.FilesetResolver = mod.FilesetResolver;
+        mediapipeLibReady = true;
+        const badge = document.getElementById('network-badge');
+        if (badge) {
+            badge.textContent = '📦 待加载（点击启动摄像头）';
+            badge.className = 'network-badge online';
+        }
+        console.log('MediaPipe 库加载成功（动态 import）');
+    } catch (err) {
+        console.warn('MediaPipe 库加载失败:', err);
+        const badge = document.getElementById('network-badge');
+        if (badge) {
+            badge.textContent = '⚠️ 库加载失败（请用 HTTP 方式打开此页面）';
+            badge.className = 'network-badge offline';
+        }
+    }
+})();
+
+// ============================================================
 //  核心配置
 // ============================================================
 const SKELETON_CONNECTIONS = [
+    // 头部→躯干
+    [0, 11], [0, 12],
     // 躯干
     [11, 12], [11, 23], [12, 24], [23, 24],
     // 左臂
@@ -349,19 +419,10 @@ function initApp() {
     drawReferenceSkeleton();
     updateRefInfo();
 
-    // 3. 检查 MediaPipe 库是否已加载（只检查，不下载模型）
-    if (window.PoseLandmarker && window.FilesetResolver) {
-        document.getElementById('network-badge').textContent = '📦 待加载（点击启动摄像头）';
-        document.getElementById('network-badge').className = 'network-badge online';
-    } else {
-        document.getElementById('network-badge').textContent = '⚠️ 库未加载';
-        document.getElementById('network-badge').className = 'network-badge offline';
-    }
-
-    // 4. ✅ 立即显示界面（不再阻塞用户）
+    // 3. ✅ 立即显示界面（不再阻塞用户）
     document.getElementById('loading').style.display = 'none';
 
-    // 5. 显示摄像头初始状态
+    // 4. 显示摄像头初始状态
     document.getElementById('match-status').textContent = '📷 点击下方"启动摄像头"开始';
     document.getElementById('camera-info').textContent = '等待启动';
 }
@@ -378,13 +439,13 @@ async function initMediaPipe() {
 
     return new Promise(async (resolve) => {
         const timeout = setTimeout(() => {
-            document.getElementById('network-badge').textContent = '⏰ 超时（请用科学上网）';
+            document.getElementById('network-badge').textContent = '⏰ 加载超时（请刷新重试）';
             document.getElementById('network-badge').className = 'network-badge offline';
             resolve(false);
         }, 10000);
 
         try {
-            if (!window.FilesetResolver || !window.PoseLandmarker) {
+            if (!mediapipeLibReady || !window.FilesetResolver || !window.PoseLandmarker) {
                 clearTimeout(timeout);
                 document.getElementById('network-badge').textContent = '⚠️ 库未加载';
                 document.getElementById('network-badge').className = 'network-badge offline';
@@ -393,12 +454,12 @@ async function initMediaPipe() {
             }
 
             const vision = await window.FilesetResolver.forVisionTasks(
-                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+                'js/mediapipe/wasm'
             );
 
             poseLandmarker = await window.PoseLandmarker.createFromOptions(vision, {
                 baseOptions: {
-                    modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+                    modelAssetPath: 'models/pose_landmarker_lite.task',
                     delegate: 'GPU'
                 },
                 runningMode: 'VIDEO',
@@ -416,8 +477,8 @@ async function initMediaPipe() {
 
         } catch (err) {
             clearTimeout(timeout);
-            console.warn('MediaPipe 初始化失败（不影响摄像头拍照）:', err);
-            document.getElementById('network-badge').textContent = '⚠️ AI 不可用（仍可拍照）';
+            console.warn('MediaPipe 初始化失败:', err);
+            document.getElementById('network-badge').textContent = '⚠️ AI 模型加载失败（仍可拍照）';
             document.getElementById('network-badge').className = 'network-badge offline';
             resolve(false);
         }
@@ -648,8 +709,11 @@ async function startCamera() {
         document.getElementById('match-status').textContent = '✅ 摄像头已开启';
         document.getElementById('match-status').style.background = 'rgba(46,204,113,0.7)';
 
-        // 2️⃣ 后台异步加载 AI 模型（不阻塞摄像头画面）
-        //  即使失败，摄像头画面和拍照功能仍然可用
+        // 先启动检测循环（显示"AI 加载中..."提示，不阻塞画面）
+        startDetectionLoop();
+
+        // 后台异步加载 AI 模型（不阻塞摄像头画面）
+        // 即使失败，摄像头画面和拍照功能仍然可用
         (async () => {
             const aiSuccess = await initMediaPipe();
 
@@ -659,12 +723,9 @@ async function startCamera() {
             } else {
                 // 模型加载失败但摄像头已开
                 document.getElementById('match-status').textContent =
-                    '✅ 摄像头已开启（⚠️ AI 模型不可用 - 请检查网络）';
+                    '✅ 摄像头已开启（⚠️ AI 模型加载失败 - 请刷新重试）';
                 document.getElementById('match-status').style.background = 'rgba(241,196,15,0.7)';
             }
-
-            // 3️⃣ 启动检测循环（如果 AI 不可用，会只绘制画面不做检测）
-            startDetectionLoop();
         })();
 
     } catch (err) {
@@ -721,14 +782,14 @@ function startDetectionLoop() {
                     cameraCtx.textAlign = 'center';
                     cameraCtx.fillStyle = 'rgba(255, 220, 100, 0.9)';
                     cameraCtx.fillText(
-                        '⏳ AI 模型加载中（约需10秒，或请检查网络）...',
+                        'AI 模型加载中...',
                         cameraCanvas.width / 2,
                         40
                     );
                     cameraCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
                     cameraCtx.font = '14px sans-serif';
                     cameraCtx.fillText(
-                        '若无骨架显示，请开启科学上网后刷新页面',
+                        '若持续无骨架，请刷新页面重试',
                         cameraCanvas.width / 2,
                         62
                     );
@@ -1167,11 +1228,26 @@ window.addEventListener('resize', () => {
     drawReferenceSkeleton();
 });
 
-document.addEventListener('DOMContentLoaded', initApp);
-// 兼容：如果 DOMContentLoaded 已触发
-if (document.readyState === 'interactive' || document.readyState === 'complete') {
-    setTimeout(initApp, 100);
-}
+// 安全兜底：最多 5 秒后强制隐藏 loading，防止页面卡死
+setTimeout(function() {
+    var loadingEl = document.getElementById('loading');
+    if (loadingEl && loadingEl.style.display !== 'none') {
+        console.warn('⚠️ 加载超时，强制显示界面');
+        loadingEl.style.display = 'none';
+        // 兜底初始化
+        try { initApp(); } catch(e) { console.warn('兜底初始化失败:', e); }
+    }
+}, 5000);
+
+document.addEventListener('DOMContentLoaded', function() {
+    try {
+        initApp();
+    } catch(e) {
+        console.error('initApp 失败:', e);
+        // 即使出错也要隐藏 loading
+        document.getElementById('loading').style.display = 'none';
+    }
+});
 </script>
 </body>
 </html>

@@ -703,6 +703,8 @@
     }
 
     // ===== MediaPipe =====
+    let currentMediaPipePose = null;
+
     function startMediaPipe(poseId) {
         const pose = POSES.find(p => p.id === poseId);
         if (!pose) return;
@@ -713,6 +715,7 @@
         const modal = document.getElementById('modal-mediapipe');
         if (!modal) return;
 
+        currentMediaPipePose = pose;
         modal.classList.add('show');
         const thumb = document.getElementById('pose-thumbnail');
         if (thumb) {
@@ -724,13 +727,86 @@
         initMediaPipeCamera(pose);
     }
 
+    function initMediaPipeCamera(pose) {
+        if (!window.MediaPipeSkeleton) {
+            console.warn('MediaPipeSkeleton 模块未加载');
+            document.getElementById('pose-match-status').textContent = '⚠️ AI 模块未加载，请刷新重试';
+            return;
+        }
+
+        const videoEl = document.getElementById('mediapipe-video');
+        const canvasEl = document.getElementById('mediapipe-canvas');
+        if (!videoEl || !canvasEl) return;
+
+        document.getElementById('pose-match-status').textContent = '⏳ 正在启动摄像头...';
+
+        window.MediaPipeSkeleton.startCamera(videoEl, canvasEl, {
+            skeleton: pose.skeleton || pose.id,
+            img: pose.img,
+            name: pose.name
+        }).then(function(success) {
+            if (success) {
+                document.getElementById('pose-match-status').textContent = '📐 参考骨架已显示，AI 正在加载...';
+                document.getElementById('pose-match-status').style.color = '#f1c40f';
+            } else {
+                document.getElementById('pose-match-status').textContent = '❌ 摄像头启动失败（请确认已授权摄像头权限并用 HTTP 方式访问）';
+            }
+        }).catch(function(err) {
+            console.error('摄像头启动出错:', err);
+            document.getElementById('pose-match-status').textContent = '❌ 摄像头启动失败: ' + (err.message || '未知错误');
+        });
+    }
+
     function closeMediaPipe() {
-        stopCamera();
+        const videoEl = document.getElementById('mediapipe-video');
+        if (window.MediaPipeSkeleton && videoEl) {
+            window.MediaPipeSkeleton.stopCamera(videoEl);
+        }
         closePosePicker();
         const modal = document.getElementById('modal-mediapipe');
         if (modal) modal.classList.remove('show');
         // 返回毕业企划页面
         goToStage('stage-result');
+    }
+
+    function capturePhoto() {
+        if (!window.MediaPipeSkeleton) return;
+        const videoEl = document.getElementById('mediapipe-video');
+        const canvasEl = document.getElementById('mediapipe-canvas');
+        if (!videoEl || !canvasEl) return;
+
+        const comp = window.MediaPipeSkeleton.capture(videoEl, canvasEl, currentMediaPipePose);
+        if (!comp) return;
+
+        // 延迟一下确保参考照片加载完成
+        setTimeout(function() {
+            try {
+                const dataUrl = comp.toDataURL('image/png', 0.95);
+                const a = document.createElement('a');
+                a.href = dataUrl;
+                a.download = 'sjtu_pose_' + Date.now() + '.png';
+                a.click();
+                showToast('📸 照片已保存！');
+            } catch(e) {
+                console.error('拍照失败:', e);
+                showToast('拍照失败，请重试');
+            }
+        }, 500);
+    }
+
+    function toggleSkeleton() {
+        if (!window.MediaPipeSkeleton) return;
+        // 切换骨架显示/隐藏
+        const canvasEl = document.getElementById('mediapipe-canvas');
+        if (canvasEl) {
+            if (canvasEl.style.display === 'none') {
+                canvasEl.style.display = '';
+                document.getElementById('btn-toggle-skeleton').textContent = '👁️';
+            } else {
+                canvasEl.style.display = 'none';
+                document.getElementById('btn-toggle-skeleton').textContent = '👁️‍🗨️';
+            }
+        }
     }
 
     function openPosePicker() {
@@ -764,7 +840,10 @@
         closePosePicker();
         const pose = POSES.find(p => p.id === poseId);
         if (!pose) return;
-        stopCamera();
+        const videoEl = document.getElementById('mediapipe-video');
+        if (window.MediaPipeSkeleton && videoEl) {
+            window.MediaPipeSkeleton.stopCamera(videoEl);
+        }
         openMediaPipe(pose);
     }
 
@@ -798,6 +877,9 @@
     window.startMediaPipe = startMediaPipe;
     window.openMediaPipe = openMediaPipe;
     window.closeMediaPipe = closeMediaPipe;
+    window.initMediaPipeCamera = initMediaPipeCamera;
+    window.capturePhoto = capturePhoto;
+    window.toggleSkeleton = toggleSkeleton;
     window.openPosePicker = openPosePicker;
     window.closePosePicker = closePosePicker;
     window.switchToPose = switchToPose;

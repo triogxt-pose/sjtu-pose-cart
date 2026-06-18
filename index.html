@@ -5,10 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>交大毕业照购物车</title>
     <link rel="stylesheet" href="css/style.css">
-    <!-- MediaPipe Tasks Vision - 骨骼检测核心库（UMD 格式，直接挂载到 window） -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.js"></script>
     <!-- SortableJS for drag-and-drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <!-- 加载 MediaPipe Vision 库（ES 模块方式） -->
+    <script type="module">
+        import { PoseLandmarker, FilesetResolver } from './js/mediapipe/vision_bundle.mjs';
+        window.PoseLandmarker = PoseLandmarker;
+        window.FilesetResolver = FilesetResolver;
+        window._mediapipeModuleReady = true;
+        console.log('✅ MediaPipe Vision 库加载成功');
+        window.dispatchEvent(new CustomEvent('mediapipe-module-ready'));
+    </script>
 </head>
 <body>
     <!-- ===== 校徽 Loading 动画 ===== -->
