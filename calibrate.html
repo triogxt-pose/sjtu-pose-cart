@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>经典照片骨架标注工具</title>
+<style>
+    body {
+        font-family: 'Microsoft YaHei', sans-serif;
+        background: #2a2a2a;
+        color: #eee;
+        margin: 0;
+        padding: 20px;
+    }
+    .container { max-width: 1600px; margin: 0 auto; }
+    h1 { color: #4fc3f7; margin-bottom: 20px; }
+
+    .controls {
+        background: #383838;
+        padding: 14px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    select, input, button {
+        padding: 8px 12px;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+    select { background: #4a4a4a; color: #fff; }
+    button {
+        background: #4fc3f7;
+        color: #1a1a1a;
+        cursor: pointer;
+        font-weight: bold;
+    }
+    button:hover { background: #81d4fa; }
+    button.secondary { background: #81c784; }
+    button.danger { background: #e57373; }
+    button.accent { background: #ff9800; }
+    .status { color: #ffeb3b; font-size: 13px; margin-left: 10px; }
+
+    .main-layout {
+        display: grid;
+        grid-template-columns: 1fr 280px;
+        gap: 12px;
+    }
+
+    .canvas-area {
+        background: #1a1a1a;
+        padding: 12px;
+        border-radius: 8px;
+        text-align: center;
+    }
+    #main-canvas {
+        max-width: 100%;
+        border: 2px solid #555;
+        cursor: crosshair;
+    }
+
+    .sidebar {
+        background: #383838;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 12px;
+    }
+    .sidebar h3 {
+        margin: 0 0 8px 0;
+        color: #4fc3f7;
+        font-size: 14px;
+    }
+    .person-tabs {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+    .person-tab {
+        padding: 6px 10px;
+        border-radius: 4px;
+        color: #fff;
+        cursor: pointer;
+        font-size: 12px;
+        border: 2px solid transparent;
+    }
+    .person-tab.active {
+        border: 2px solid #fff;
+        box-shadow: 0 0 8px rgba(255,255,255,0.4);
+    }
+    .point-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        margin-bottom: 12px;
+    }
+    .point-item {
+        padding: 4px 6px;
+        border-radius: 3px;
+        background: #2a2a2a;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .point-item.has { background: #2d4a2d; color: #aaffaa; }
+    .point-item.missing { background: #4a2d2d; color: #ffaaaa; }
+    .point-item.next { background: #ff9800; color: #000; font-weight: bold; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0.6; } }
+    .point-num {
+        display: inline-block;
+        width: 22px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        background: rgba(0,0,0,0.4);
+        border-radius: 2px;
+        font-weight: bold;
+        font-size: 10px;
+    }
+
+    .counter {
+        padding: 8px;
+        background: #2a2a2a;
+        border-radius: 4px;
+        margin-bottom: 8px;
+        font-size: 12px;
+    }
+    .counter .good { color: #81c784; font-weight: bold; }
+    .counter .bad { color: #e57373; font-weight: bold; }
+
+    .info {
+        background: #383838;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.7;
+        margin-top: 12px;
+    }
+    .info code {
+        background: #1a1a1a;
+        padding: 2px 6px;
+        border-radius: 3px;
+        color: #ffa726;
+    }
+
+    #json-output {
+        width: 100%;
+        height: 250px;
+        background: #1a1a1a;
+        color: #81c784;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 10px;
+        font-family: 'Consolas', monospace;
+        font-size: 11px;
+        box-sizing: border-box;
+        white-space: pre;
+        margin-top: 12px;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🎯 经典照片骨架标注工具（33 点 × N 人）</h1>
+
+    <div class="controls">
+        <select id="photo-select">
+            <option value="">-- 选择一张经典照片 --</option>
+            <option value="classic_1_empresses">1. 皇后乐队（1人）</option>
+            <option value="classic_2_wujing_xienan">2. 吴京 & 谢娜（2人）</option>
+            <option value="classic_3_exo">3. EXO 组合（3人）</option>
+            <option value="classic_3_look_back">3b. 回头姿势（3人）</option>
+            <option value="classic_4_empresses">4. 皇后乐队群体（4人）</option>
+            <option value="classic_4_trump">4b. 特朗普（4人）</option>
+            <option value="classic_7_pro_team">7. 专业团队（7人）</option>
+        </select>
+
+        <label style="color:#aaa;font-size:12px;">或上传：</label>
+        <input type="file" id="file-upload" accept="image/*">
+
+        <label style="color:#aaa;font-size:12px;">检测人数：</label>
+        <select id="num-poses" style="min-width:60px;">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="8">8</option>
+        </select>
+
+        <button id="btn-detect">🔍 AI 自动检测</button>
+        <button id="btn-add-person" class="secondary">➕ 添加一人</button>
+        <button id="btn-next-point" class="accent">👉 标下一个点</button>
+        <button id="btn-delete-person" class="danger">🗑 删除当前人</button>
+        <button id="btn-export" class="secondary">📤 导出 JSON</button>
+        <button id="btn-copy" class="secondary">📋 复制</button>
+        <span class="status" id="status"></span>
+    </div>
+
+    <div class="main-layout">
+        <div class="canvas-area">
+            <canvas id="main-canvas" width="800" height="600"></canvas>
+        </div>
+
+        <div class="sidebar">
+            <h3>👥 当前人物</h3>
+            <div class="person-tabs" id="person-tabs"></div>
+
+            <h3 style="margin-top:16px;">📊 完成度</h3>
+            <div class="counter" id="counter">请先选照片</div>
+
+            <h3 style="margin-top:16px;">🔢 33 个点清单</h3>
+            <div class="point-list" id="point-list"></div>
+        </div>
+    </div>
+
+    <div class="info">
+        <strong>📖 使用方法：</strong><br>
+        1️⃣ 下拉菜单选照片 → 点 **🔍 AI 自动检测**<br>
+        2️⃣ 右上角看"完成度"，绿色=已标，红色=缺失<br>
+        3️⃣ 点 **👉 标下一个点** 或直接点右侧清单里的红色项目 → 然后在图片上<strong>点击一下</strong>放置<br>
+        4️⃣ 拖动已有圆点来微调位置<br>
+        5️⃣ 点上方颜色标签切换正在编辑的人（当前人是高亮彩色，其他人半透明）<br>
+        6️⃣ AI 漏检的人 → 点 **➕ 添加一人** 手动全标<br>
+        7️⃣ 完成后点 **📤 导出 JSON** → 粘贴到 <code>js/skeleton-templates.js</code>
+    </div>
+
+    <textarea id="json-output" placeholder="导出结果显示在这里..."></textarea>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from './js/mediapipe/vision_bundle.mjs';
+
+const POSE_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,7],[0,4],[4,5],[5,6],[6,8],
+    [9,10],[11,12],[11,13],[13,15],[15,17],[15,19],[17,19],
+    [12,14],[14,16],[16,18],[16,20],[18,20],
+    [11,23],[12,24],[23,24],[23,25],[24,26],
+    [25,27],[26,28],[27,29],[28,30],[29,31],[30,32]
+];
+
+const LANDMARK_NAMES = {
+    0: '鼻子', 1: '左眼内角', 2: '左眼', 3: '左眼外角',
+    4: '右眼内角', 5: '右眼', 6: '右眼外角',
+    7: '左耳', 8: '右耳', 9: '嘴巴左', 10: '嘴巴右',
+    11: '左肩', 12: '右肩', 13: '左肘', 14: '右肘',
+    15: '左腕', 16: '右腕', 17: '左小指', 18: '右小指',
+    19: '左拇指', 20: '右拇指', 21: '左食指', 22: '右食指',
+    23: '左髋', 24: '右髋', 25: '左膝', 26: '右膝',
+    27: '左踝', 28: '右踝', 29: '左脚跟', 30: '右脚跟',
+    31: '左脚尖', 32: '右脚尖'
+};
+
+const PERSON_COLORS = [
+    '#ff4444', '#44ff44', '#4488ff', '#ff8844',
+    '#ff44ff', '#44ffff', '#ffff44', '#ff9900'
+];
+
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+const photoSelect = document.getElementById('photo-select');
+const fileUpload = document.getElementById('file-upload');
+const numPosesSelect = document.getElementById('num-poses');
+const statusEl = document.getElementById('status');
+const jsonOutput = document.getElementById('json-output');
+const personTabs = document.getElementById('person-tabs');
+const pointListEl = document.getElementById('point-list');
+const counterEl = document.getElementById('counter');
+
+let currentImage = null;
+let persons = [];
+let activePerson = 0;
+let draggingPoint = null;
+let placingPoint = null;
+let poseLandmarker = null;
+let modelReady = false;
+
+function setStatus(text) { statusEl.textContent = text; }
+function getPhotoPath(photoId) { return `assets/images/poses/classic_photos/${photoId}.png`; }
+
+function loadImage(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+    });
+}
+
+function drawImageOnCanvas(img) {
+    currentImage = img;
+    const maxW = 800;
+    const scale = Math.min(1, maxW / img.width);
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    redraw();
+    updateSidebar();
+    setStatus('图片已加载');
+}
+
+function redraw() {
+    if (!currentImage) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+
+    persons.forEach((p, idx) => {
+        if (!p || !p.landmarks) return;
+        const isActive = idx === activePerson;
+        const color = PERSON_COLORS[idx % PERSON_COLORS.length];
+
+        ctx.strokeStyle = isActive ? color : hexToRgba(color, 0.35);
+        ctx.lineWidth = isActive ? 3 : 2;
+        ctx.beginPath();
+        for (const [a, b] of POSE_CONNECTIONS) {
+            if (p.landmarks[a] && p.landmarks[b]) {
+                ctx.moveTo(p.landmarks[a].x * canvas.width, p.landmarks[a].y * canvas.height);
+                ctx.lineTo(p.landmarks[b].x * canvas.width, p.landmarks[b].y * canvas.height);
+            }
+        }
+        ctx.stroke();
+
+        for (let i = 0; i < 33; i++) {
+            if (!p.landmarks[i]) continue;
+            const x = p.landmarks[i].x * canvas.width;
+            const y = p.landmarks[i].y * canvas.height;
+
+            if (isActive) {
+                ctx.beginPath();
+                ctx.arc(x, y, 10, 0, 2 * Math.PI);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(i, x, y);
+            } else {
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = hexToRgba(color, 0.5);
+                ctx.fill();
+            }
+        }
+
+        if (isActive) {
+            const shoulders = [p.landmarks[11], p.landmarks[12]].filter(Boolean);
+            if (shoulders.length > 0) {
+                let lx = 0, ly = 0;
+                shoulders.forEach(s => { lx += s.x; ly += s.y; });
+                lx = lx / shoulders.length * canvas.width;
+                ly = ly / shoulders.length * canvas.height;
+                ctx.fillStyle = color;
+                ctx.font = 'bold 18px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`人物 ${idx + 1}`, lx, ly - 30);
+            }
+        }
+    });
+
+    if (placingPoint !== null && persons[activePerson]) {
+        const name = LANDMARK_NAMES[placingPoint] || `点${placingPoint}`;
+        ctx.fillStyle = '#ff9800';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`👆 在图片上点击放置: #${placingPoint} ${name}`, canvas.width / 2, 35);
+
+        ctx.strokeStyle = '#ff9800';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 8]);
+        ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+        ctx.setLineDash([]);
+    }
+}
+
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function updatePersonTabs() {
+    personTabs.innerHTML = '';
+    if (persons.length === 0) {
+        personTabs.innerHTML = '<span style="color:#888;font-size:12px;">尚无标注</span>';
+        return;
+    }
+    persons.forEach((_, idx) => {
+        const tab = document.createElement('div');
+        tab.className = 'person-tab' + (idx === activePerson ? ' active' : '');
+        const color = PERSON_COLORS[idx % PERSON_COLORS.length];
+        tab.style.background = color;
+        const p = persons[idx];
+        const count = p ? Object.keys(p.landmarks).filter(k => p.landmarks[k]).length : 0;
+        tab.textContent = `人物 ${idx + 1} (${count}/33)`;
+        tab.onclick = () => {
+            activePerson = idx;
+            placingPoint = null;
+            updatePersonTabs();
+            updateSidebar();
+            redraw();
+            setStatus(`正在编辑 人物 ${idx + 1}`);
+        };
+        personTabs.appendChild(tab);
+    });
+}
+
+function updateSidebar() {
+    if (persons.length === 0 || !persons[activePerson]) {
+        counterEl.innerHTML = '请先选照片并点击"AI 自动检测"或"添加一人"';
+        pointListEl.innerHTML = '';
+        return;
+    }
+    const lm = persons[activePerson].landmarks;
+    let hasCount = 0;
+    for (let i = 0; i < 33; i++) if (lm[i]) hasCount++;
+
+    const pct = Math.round(hasCount / 33 * 100);
+    counterEl.innerHTML = `
+        <div style="font-size:14px;margin-bottom:6px;">
+          人物 ${activePerson + 1}: <span class="good">${hasCount}</span> / 33
+          &nbsp;&nbsp;<span style="color:#4fc3f7;">${pct}%</span>
+        </div>
+        <div style="background:#1a1a1a;height:10px;border-radius:5px;overflow:hidden;">
+            <div style="background:linear-gradient(90deg,#ff9800,#81c784);height:100%;width:${pct}%;"></div>
+        </div>
+    `;
+
+    const nextIdx = getNextMissingPoint();
+    pointListEl.innerHTML = '';
+    for (let i = 0; i < 33; i++) {
+        const div = document.createElement('div');
+        const has = !!lm[i];
+        const isNext = (placingPoint === i) || (!has && i === nextIdx && placingPoint === null);
+        let cls = has ? 'point-item has' : 'point-item missing';
+        if (isNext && !has) cls = 'point-item next';
+        div.className = cls;
+        const name = LANDMARK_NAMES[i] || `点${i}`;
+        div.innerHTML = `<span class="point-num">${i}</span>${name}`;
+        div.style.cursor = 'pointer';
+        div.onclick = () => {
+            if (has) {
+                if (confirm(`删除点 #${i} ${name}？`)) {
+                    lm[i] = null;
+                    updateSidebar();
+                    updatePersonTabs();
+                    redraw();
+                }
+            } else {
+                placingPoint = i;
+                redraw();
+                updateSidebar();
+                setStatus(`👆 在图片上点击放置: #${i} ${name}`);
+            }
+        };
+        pointListEl.appendChild(div);
+    }
+}
+
+function getNextMissingPoint() {
+    if (!persons[activePerson]) return -1;
+    const lm = persons[activePerson].landmarks;
+    for (let i = 0; i < 33; i++) if (!lm[i]) return i;
+    return -1;
+}
+
+function makeEmptyPerson() {
+    const landmarks = {};
+    for (let i = 0; i < 33; i++) landmarks[i] = null;
+    return { landmarks };
+}
+
+canvas.addEventListener('mousedown', (e) => {
+    if (!persons[activePerson]) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const lm = persons[activePerson].landmarks;
+
+    if (placingPoint !== null) {
+        lm[placingPoint] = { x: mx / canvas.width, y: my / canvas.height, v: 0.9 };
+        const placed = placingPoint;
+        placingPoint = getNextMissingPoint();
+        const name = LANDMARK_NAMES[placed] || `点${placed}`;
+        if (placingPoint === -1) {
+            setStatus(`✅ 33 个点全部完成！切换到其他人或导出 JSON`);
+        } else {
+            const nextName = LANDMARK_NAMES[placingPoint] || `点${placingPoint}`;
+            setStatus(`✓ 已放 #${placed} ${name} → 下一个: #${placingPoint} ${nextName}（点图片放置）`);
+        }
+        updateSidebar();
+        updatePersonTabs();
+        redraw();
+        return;
+    }
+
+    let best = -1;
+    let bestDist = 18 * 18;
+    for (let i = 0; i < 33; i++) {
+        if (!lm[i]) continue;
+        const dx = mx - lm[i].x * canvas.width;
+        const dy = my - lm[i].y * canvas.height;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; best = i; }
+    }
+    if (best >= 0) {
+        draggingPoint = best;
+        const name = LANDMARK_NAMES[best] || `点${best}`;
+        setStatus(`拖动人物${activePerson+1}: ${name} (#${best})`);
+        canvas.style.cursor = 'grabbing';
+    }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    if (draggingPoint !== null && persons[activePerson]) {
+        persons[activePerson].landmarks[draggingPoint] = {
+            x: mx / canvas.width,
+            y: my / canvas.height,
+            v: persons[activePerson].landmarks[draggingPoint]?.v || 0.9
+        };
+        redraw();
+        return;
+    }
+
+    if (persons[activePerson]) {
+        const lm = persons[activePerson].landmarks;
+        let hovered = -1;
+        let bestDist = 18 * 18;
+        for (let i = 0; i < 33; i++) {
+            if (!lm[i]) continue;
+            const dx = mx - lm[i].x * canvas.width;
+            const dy = my - lm[i].y * canvas.height;
+            const d = dx * dx + dy * dy;
+            if (d < bestDist) { bestDist = d; hovered = i; }
+        }
+        canvas.style.cursor = hovered >= 0 ? 'grab' : 'crosshair';
+    }
+});
+
+canvas.addEventListener('mouseup', () => {
+    if (draggingPoint !== null) {
+        draggingPoint = null;
+        canvas.style.cursor = 'crosshair';
+        setStatus(`人物 ${activePerson + 1} 编辑中`);
+    }
+});
+
+canvas.addEventListener('mouseleave', () => { draggingPoint = null; });
+
+photoSelect.addEventListener('change', async (e) => {
+    if (!e.target.value) return;
+    setStatus('加载图片...');
+    try {
+        const img = await loadImage(getPhotoPath(e.target.value));
+        persons = [];
+        activePerson = 0;
+        placingPoint = null;
+        drawImageOnCanvas(img);
+        updatePersonTabs();
+    } catch (err) {
+        setStatus('❌ 加载失败：' + err.message);
+    }
+});
+
+fileUpload.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+            persons = [];
+            activePerson = 0;
+            placingPoint = null;
+            drawImageOnCanvas(img);
+            updatePersonTabs();
+        };
+        img.src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+});
+
+document.getElementById('btn-detect').addEventListener('click', async () => {
+    if (!currentImage) { setStatus('❌ 先选一张图片'); return; }
+    if (!modelReady) { setStatus('AI 模型还在加载，请稍候...'); return; }
+    const numPoses = parseInt(numPosesSelect.value);
+    setStatus(`用 MediaPipe full 模型检测 ${numPoses} 个人体...`);
+
+    const detectionCanvas = document.createElement('canvas');
+    detectionCanvas.width = currentImage.width;
+    detectionCanvas.height = currentImage.height;
+    const dctx = detectionCanvas.getContext('2d');
+    dctx.drawImage(currentImage, 0, 0);
+
+    const result = await poseLandmarker.detect(detectionCanvas);
+
+    if (!result.landmarks || result.landmarks.length === 0) {
+        setStatus('⚠️ AI 没检测到任何人。点"➕ 添加一人"开始手动标注');
+        return;
+    }
+
+    persons = result.landmarks.map(rawLm => {
+        const landmarks = {};
+        for (let i = 0; i < 33; i++) {
+            if (rawLm[i] && rawLm[i].visibility > 0.1) {
+                landmarks[i] = { x: rawLm[i].x, y: rawLm[i].y, v: rawLm[i].visibility };
+            } else {
+                landmarks[i] = null;
+            }
+        }
+        return { landmarks };
+    });
+
+    activePerson = 0;
+    placingPoint = getNextMissingPoint();
+    updatePersonTabs();
+    updateSidebar();
+    redraw();
+    const total = persons.length;
+    let totalPoints = 0;
+    persons.forEach(p => {
+        for (let i = 0; i < 33; i++) if (p.landmarks[i]) totalPoints++;
+    });
+    setStatus(`✅ 检测完成！${total} 人共 ${totalPoints} 个点。看右侧"完成度"，缺失点👉 点击清单里红色项目 → 在图上点一下`);
+});
+
+document.getElementById('btn-add-person').addEventListener('click', () => {
+    if (!currentImage) { setStatus('❌ 先选一张图片'); return; }
+    persons.push(makeEmptyPerson());
+    activePerson = persons.length - 1;
+    placingPoint = 0;
+    updatePersonTabs();
+    updateSidebar();
+    redraw();
+    setStatus(`👆 已添加人物 ${activePerson + 1}。在图片上点击放置 #0 鼻子`);
+});
+
+document.getElementById('btn-next-point').addEventListener('click', () => {
+    if (!persons[activePerson]) { setStatus('❌ 先添加一个人或检测'); return; }
+    const next = getNextMissingPoint();
+    if (next === -1) { setStatus('✅ 33 个点都有了！'); return; }
+    placingPoint = next;
+    redraw();
+    updateSidebar();
+    const name = LANDMARK_NAMES[next] || `点${next}`;
+    setStatus(`👆 在图片上点击放置: #${next} ${name}`);
+});
+
+document.getElementById('btn-delete-person').addEventListener('click', () => {
+    if (persons.length === 0) return;
+    if (!confirm(`删除人物 ${activePerson + 1}？`)) return;
+    persons.splice(activePerson, 1);
+    activePerson = Math.max(0, activePerson - 1);
+    placingPoint = null;
+    updatePersonTabs();
+    updateSidebar();
+    redraw();
+    setStatus(`已删除。剩余 ${persons.length} 个人`);
+});
+
+document.getElementById('btn-export').addEventListener('click', () => {
+    if (persons.length === 0) { setStatus('❌ 没有骨架可导出'); return; }
+    const id = photoSelect.value || 'custom_pose';
+    const personsArr = persons.map(p => {
+        const obj = {};
+        for (let i = 0; i < 33; i++) {
+            if (p.landmarks[i]) {
+                obj[i] = {
+                    x: parseFloat(p.landmarks[i].x.toFixed(3)),
+                    y: parseFloat(p.landmarks[i].y.toFixed(3)),
+                    v: parseFloat((p.landmarks[i].v || 0.8).toFixed(3))
+                };
+            }
+        }
+        return obj;
+    });
+    const template = { [id]: { people: personsArr.length, description: id, persons: personsArr } };
+    jsonOutput.value = JSON.stringify(template, null, 4);
+    let total = 0;
+    personsArr.forEach(p => total += Object.keys(p).length);
+    setStatus(`✅ JSON 已生成！共 ${personsArr.length} 人 ${total} 个点。粘贴到 skeleton-templates.js`);
+});
+
+document.getElementById('btn-copy').addEventListener('click', async () => {
+    if (!jsonOutput.value) { setStatus('❌ 先导出 JSON'); return; }
+    try {
+        await navigator.clipboard.writeText(jsonOutput.value);
+        setStatus('✅ 已复制到剪贴板！');
+    } catch (err) {
+        setStatus('⚠️ 浏览器不支持自动复制，请手动选中文本复制');
+    }
+});
+
+async function init() {
+    setStatus('加载 MediaPipe full 模型...');
+    try {
+        const vision = await FilesetResolver.forVisionTasks('js/mediapipe/wasm');
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: 'models/pose_landmarker_full.task', delegate: 'GPU' },
+            runningMode: 'IMAGE',
+            numPoses: 3,
+            minPoseDetectionConfidence: 0.3,
+            minPosePresenceConfidence: 0.2
+        });
+        modelReady = true;
+        setStatus('✅ 模型就绪。选择照片 → 点 "AI 自动检测" 或 "添加一人"');
+    } catch (err) {
+        setStatus('❌ 模型加载失败：' + err.message);
+        console.error(err);
+    }
+}
+init();
+</script>
+</body>
+</html>

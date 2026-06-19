@@ -342,7 +342,7 @@
 
             poseLandmarkerVideo = await window.PoseLandmarker.createFromOptions(vision, {
                 baseOptions: {
-                    modelAssetPath: 'models/pose_landmarker_lite.task',
+                    modelAssetPath: 'models/pose_landmarker_full.task',
                     delegate: 'GPU'
                 },
                 runningMode: 'VIDEO',
