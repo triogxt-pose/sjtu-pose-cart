@@ -18,7 +18,7 @@
     let showSkeleton = true;
     let poseLandmarkerVideo = null;
     let videoLandmarkerReady = false;
-    let lastDetectionTime = 0;
+    let initPromise = null; // 防止重复初始化的锁
 
     // ============ 骨骼连接关系 ============
     const SKELETON_CONNECTIONS = [
@@ -183,7 +183,10 @@
             if (!refP[11] || !refP[12]) continue;
 
             const refShoulderDist = Math.abs(refP[11].x - refP[12].x) || 0.15;
-            const refTorsoH = Math.abs((refP[11].y + refP[12].y) / 2 - (refP[23].y + refP[24].y) / 2) || 0.15;
+            let refTorsoH = 0.15;
+            if (refP[23] && refP[24]) {
+                refTorsoH = Math.abs((refP[11].y + refP[12].y) / 2 - (refP[23].y + refP[24].y) / 2) || 0.15;
+            }
             const refScale = Math.max(refShoulderDist, refTorsoH);
 
             for (let userIdx = 0; userIdx < userLandmarksArray.length; userIdx++) {
@@ -237,78 +240,134 @@
     function startDetectionLoop(videoEl, canvasEl) {
         if (!videoEl || !canvasEl) return;
         const ctx = canvasEl.getContext('2d');
+        let lastDetectTime = 0;
+        let frameCount = 0;
+        let detectCount = 0;
+        let cachedPersons = null;       // 缓存上次检测到的用户骨架（person 格式）
+        let cachedMatchScore = null;    // 缓存上次匹配分数
+        let modelReadyShown = false;    // 是否已显示 AI 就绪状态
 
         function loop(now) {
-            if (!cameraStream) return;
+            try {
+                frameCount++;
+                if (!cameraStream) return;
 
-            if (videoEl.videoWidth && videoEl.videoHeight) {
-                if (canvasEl.width !== videoEl.videoWidth) {
-                    canvasEl.width = videoEl.videoWidth;
-                    canvasEl.height = videoEl.videoHeight;
-                }
-            }
-
-            ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-
-            // 先绘制参考骨架（经典姿势模板，白色虚线）—— 不受 AI 加载影响
-            if (currentPose && currentPose.skeleton) {
-                const template = getSkeletonTemplate(currentPose.skeleton);
-                if (template && template.persons) {
-                    template.persons.forEach((person, idx) => {
-                        drawPersonSkeleton(ctx, person, 0, 0, canvasEl.width, canvasEl.height, idx, true);
-                    });
-                }
-            }
-
-            // AI 模型未就绪时显示提示
-            if (!videoLandmarkerReady) {
-                const statusEl = document.getElementById('pose-match-status');
-                if (statusEl && !statusEl._aiLoadingShown) {
-                    statusEl._aiLoadingShown = true;
-                    statusEl.textContent = '⏳ AI 模型加载中...（参考骨架已显示）';
-                    statusEl.style.color = '#f1c40f';
-                }
-                animationFrameId = requestAnimationFrame(loop);
-                return;
-            }
-
-            let landmarks = null;
-            if (videoLandmarkerReady && poseLandmarkerVideo && videoEl.readyState >= 2 && (now - lastDetectionTime) >= 40) {
-                try {
-                    const result = poseLandmarkerVideo.detectForVideo(videoEl, now);
-                    if (result && result.landmarks) landmarks = result.landmarks;
-                    lastDetectionTime = now;
-                } catch (e) { /* 跳过 */ }
-            }
-
-            if (landmarks && landmarks.length > 0) {
-                landmarks.forEach((lm, idx) => {
-                    const person = {};
-                    lm.forEach((p, i) => {
-                        person[i] = {
-                            x: p.x,
-                            y: p.y,
-                            v: (typeof p.visibility === 'number' ? p.visibility : 1)
-                        };
-                    });
-                    drawPersonSkeleton(ctx, person, 0, 0, canvasEl.width, canvasEl.height, idx, false);
-                });
-
-                // 更新匹配状态（如果页面有匹配状态元素）
-                const matchScore = calculateMatchScore(landmarks);
-                const statusEl = document.getElementById('pose-match-status');
-                if (statusEl && matchScore !== null) {
-                    if (matchScore < 0.18) {
-                        statusEl.textContent = '✅ 完美匹配！可以拍照了！';
-                        statusEl.style.color = '#2ecc71';
-                    } else if (matchScore < 0.35) {
-                        statusEl.textContent = '🟡 接近了 (' + matchScore.toFixed(2) + ')';
-                        statusEl.style.color = '#f1c40f';
-                    } else {
-                        statusEl.textContent = '📐 继续调整姿势...';
-                        statusEl.style.color = '#00a8ff';
+                if (videoEl.videoWidth && videoEl.videoHeight) {
+                    if (canvasEl.width !== videoEl.videoWidth) {
+                        canvasEl.width = videoEl.videoWidth;
+                        canvasEl.height = videoEl.videoHeight;
                     }
                 }
+
+                ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+                // 先绘制参考骨架（经典姿势模板，白色虚线）—— 不受 AI 加载影响
+                if (currentPose && currentPose.skeleton) {
+                    const template = getSkeletonTemplate(currentPose.skeleton);
+                    if (template && template.persons) {
+                        template.persons.forEach((person, idx) => {
+                            const mirrored = {};
+                            for (let i = 0; i < 33; i++) {
+                                if (person[i]) {
+                                    mirrored[i] = { x: 1 - person[i].x, y: person[i].y, v: person[i].v };
+                                }
+                            }
+                            drawPersonSkeleton(ctx, mirrored, 0, 0, canvasEl.width, canvasEl.height, idx, true);
+                        });
+                    }
+                }
+
+                // AI 模型未就绪时显示提示
+                if (!videoLandmarkerReady) {
+                    const statusEl = document.getElementById('pose-match-status');
+                    if (statusEl && !statusEl._aiLoadingShown) {
+                        statusEl._aiLoadingShown = true;
+                        statusEl.textContent = '⏳ AI 模型加载中...（参考骨架已显示）';
+                        statusEl.style.color = '#f1c40f';
+                    }
+                    animationFrameId = requestAnimationFrame(loop);
+                    return;
+                }
+
+                // AI 模型就绪后，只显示一次状态切换
+                if (!modelReadyShown) {
+                    modelReadyShown = true;
+                    const statusEl = document.getElementById('pose-match-status');
+                    if (statusEl) {
+                        statusEl.textContent = '📐 调整姿势以匹配参考骨架...';
+                        statusEl.style.color = '#00a8ff';
+                        delete statusEl._aiLoadingShown;
+                    }
+                }
+
+                // === 尝试进行骨骼检测 ===
+                let landmarks = null;
+                if (poseLandmarkerVideo && videoEl.readyState >= 2 && (now - lastDetectTime) >= 40) {
+                    try {
+                        const result = poseLandmarkerVideo.detectForVideo(videoEl, now);
+                        if (result && result.landmarks) {
+                            landmarks = result.landmarks;
+                            lastDetectTime = now;
+                            detectCount++;
+
+                            // 转换为 person 格式并缓存
+                            cachedPersons = [];
+                            landmarks.forEach((lm) => {
+                                const person = {};
+                                lm.forEach((p, i) => {
+                                    person[i] = {
+                                        x: p.x,
+                                        y: p.y,
+                                        v: (typeof p.visibility === 'number' ? p.visibility : 1)
+                                    };
+                                });
+                                cachedPersons.push(person);
+                            });
+
+                            // 计算匹配分数并缓存
+                            cachedMatchScore = calculateMatchScore(landmarks);
+                        }
+                    } catch (e) {
+                        console.warn('[MediaPipe] detectForVideo 出错:', e.message || e);
+                    }
+                }
+
+                // === 绘制用户骨架（使用缓存，避免闪烁）===
+                if (cachedPersons && cachedPersons.length > 0) {
+                    cachedPersons.forEach((person, idx) => {
+                        drawPersonSkeleton(ctx, person, 0, 0, canvasEl.width, canvasEl.height, idx, false);
+                    });
+                }
+
+                // === 始终显示匹配状态（使用缓存的分数）===
+                const statusEl = document.getElementById('pose-match-status');
+                if (statusEl) {
+                    if (cachedMatchScore !== null) {
+                        const pct = Math.max(0, Math.min(100, Math.round((1 - cachedMatchScore) * 100)));
+                        if (cachedMatchScore < 0.18) {
+                            statusEl.textContent = '✅ 完美匹配！可以拍照了！(' + pct + '%)';
+                            statusEl.style.color = '#2ecc71';
+                        } else if (cachedMatchScore < 0.35) {
+                            statusEl.textContent = '🟡 接近了 (' + pct + '%)';
+                            statusEl.style.color = '#f1c40f';
+                        } else {
+                            statusEl.textContent = '📐 继续调整姿势... (' + pct + '%)';
+                            statusEl.style.color = '#00a8ff';
+                        }
+                    } else if (modelReadyShown && !cachedPersons) {
+                        statusEl.textContent = '🔍 未检测到人物，请面向摄像头...';
+                        statusEl.style.color = '#e74c3c';
+                    }
+                }
+
+                // 每 60 帧输出一次调试信息
+                if (frameCount % 60 === 0) {
+                    console.log('[MediaPipe] 循环运行中 - 帧:', frameCount, '检测次数:', detectCount,
+                        '匹配分:', cachedMatchScore !== null ? cachedMatchScore.toFixed(3) : 'null',
+                        'videoReady:', videoEl.readyState, 'canvas:', canvasEl.width + 'x' + canvasEl.height);
+                }
+            } catch (loopErr) {
+                console.error('[MediaPipe] 循环异常:', loopErr.message || loopErr, loopErr.stack);
             }
 
             animationFrameId = requestAnimationFrame(loop);
@@ -318,16 +377,40 @@
 
     // ============ 初始化 MediaPipe ============
     async function initPoseLandmarker() {
-        // 等待 module script 加载完成（如果还没加载）
-        if (!window._mediapipeModuleReady) {
-            console.log('[MediaPipe] 等待 Vision 库加载...');
-            await new Promise((resolve) => {
-                const timeout = setTimeout(resolve, 5000);
-                window.addEventListener('mediapipe-module-ready', () => {
-                    clearTimeout(timeout);
-                    resolve();
-                }, { once: true });
-            });
+        // 防止重复初始化：如果已经在初始化中，返回同一个 Promise
+        if (initPromise) return initPromise;
+        // 如果已经初始化成功，直接返回
+        if (videoLandmarkerReady) return true;
+
+        initPromise = (async () => {
+        // 1) 如果 module script 已经加载了库，直接使用
+        if (window._mediapipeModuleReady && window.PoseLandmarker && window.FilesetResolver) {
+            console.log('[MediaPipe] 库已通过 module script 加载');
+        } else {
+            // 2) 等待 module script 加载完成（最多等 3 秒）
+            if (!window._mediapipeModuleReady) {
+                console.log('[MediaPipe] 等待 Vision 库加载...');
+                await new Promise((resolve) => {
+                    const timeout = setTimeout(resolve, 3000);
+                    window.addEventListener('mediapipe-module-ready', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    }, { once: true });
+                });
+            }
+
+            // 3) 降级：尝试动态 import（兼容 GitHub Pages 等场景）
+            if (!window.FilesetResolver || !window.PoseLandmarker) {
+                console.log('[MediaPipe] 尝试动态 import 加载库...');
+                try {
+                    const mod = await import('js/mediapipe/vision_bundle.mjs');
+                    window.PoseLandmarker = mod.PoseLandmarker;
+                    window.FilesetResolver = mod.FilesetResolver;
+                    console.log('[MediaPipe] 动态 import 加载成功');
+                } catch (importErr) {
+                    console.warn('[MediaPipe] 动态 import 也失败:', importErr);
+                }
+            }
         }
 
         if (!window.FilesetResolver || !window.PoseLandmarker) {
@@ -342,7 +425,7 @@
 
             poseLandmarkerVideo = await window.PoseLandmarker.createFromOptions(vision, {
                 baseOptions: {
-                    modelAssetPath: 'models/pose_landmarker_full.task',
+                    modelAssetPath: 'models/pose_landmarker_lite.task',
                     delegate: 'GPU'
                 },
                 runningMode: 'VIDEO',
@@ -353,11 +436,17 @@
             });
 
             videoLandmarkerReady = true;
+            console.log('[MediaPipe] 模型加载完成，开始实时检测');
             return true;
         } catch (err) {
             console.warn('[MediaPipe] 模型初始化失败:', err);
             return false;
         }
+        })(); // end initPromise
+
+        // 初始化失败时重置锁，允许重试
+        initPromise.then(result => { if (!result) initPromise = null; });
+        return initPromise;
     }
 
     // ============ 启动摄像头 ============
