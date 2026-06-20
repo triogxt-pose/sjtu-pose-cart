@@ -33,7 +33,6 @@ desktop.ini
 
 # ===== 未使用的模型文件（减小仓库体积） =====
 *.pt
-models/hand_landmarker.task
 
 # ===== 构建产物 =====
 dist/

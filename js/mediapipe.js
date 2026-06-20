@@ -661,6 +661,11 @@
             try {
                 const vision = await window.FilesetResolver.forVisionTasks('js/mediapipe/wasm');
 
+                // 移动端优先使用 CPU，桌面端尝试 GPU
+                const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent);
+                const delegate = isMobile ? 'CPU' : 'GPU';
+                console.log('[MediaPipe] 设备类型:', isMobile ? '移动端' : '桌面端', '→ delegate:', delegate);
+
                 // 初始化 HandLandmarker
                 if (window.HandLandmarker) {
                     console.log('[MediaPipe] 初始化手部模型...');
@@ -668,7 +673,7 @@
                         handLandmarkerVideo = await window.HandLandmarker.createFromOptions(vision, {
                             baseOptions: {
                                 modelAssetPath: 'models/hand_landmarker.task',
-                                delegate: 'GPU'
+                                delegate: delegate
                             },
                             runningMode: 'VIDEO',
                             numHands: 4,
@@ -679,7 +684,24 @@
                         handsReady = true;
                         console.log('[MediaPipe] ✅ 手部模型就绪');
                     } catch (handErr) {
-                        console.warn('[MediaPipe] 手部模型初始化失败:', handErr);
+                        console.warn('[MediaPipe] 手部模型 GPU 失败，尝试 CPU...');
+                        try {
+                            handLandmarkerVideo = await window.HandLandmarker.createFromOptions(vision, {
+                                baseOptions: {
+                                    modelAssetPath: 'models/hand_landmarker.task',
+                                    delegate: 'CPU'
+                                },
+                                runningMode: 'VIDEO',
+                                numHands: 4,
+                                minHandDetectionConfidence: 0.5,
+                                minHandPresenceConfidence: 0.5,
+                                minTrackingConfidence: 0.5
+                            });
+                            handsReady = true;
+                            console.log('[MediaPipe] ✅ 手部模型就绪 (CPU fallback)');
+                        } catch (handErr2) {
+                            console.warn('[MediaPipe] 手部模型初始化失败:', handErr2);
+                        }
                     }
                 }
 
@@ -690,7 +712,7 @@
                         faceLandmarkerVideo = await window.FaceLandmarker.createFromOptions(vision, {
                             baseOptions: {
                                 modelAssetPath: 'models/face_landmarker.task',
-                                delegate: 'GPU'
+                                delegate: delegate
                             },
                             runningMode: 'VIDEO',
                             numFaces: 2,
@@ -703,7 +725,26 @@
                         faceReady = true;
                         console.log('[MediaPipe] ✅ 面部模型就绪');
                     } catch (faceErr) {
-                        console.warn('[MediaPipe] 面部模型初始化失败:', faceErr);
+                        console.warn('[MediaPipe] 面部模型 GPU 失败，尝试 CPU...');
+                        try {
+                            faceLandmarkerVideo = await window.FaceLandmarker.createFromOptions(vision, {
+                                baseOptions: {
+                                    modelAssetPath: 'models/face_landmarker.task',
+                                    delegate: 'CPU'
+                                },
+                                runningMode: 'VIDEO',
+                                numFaces: 2,
+                                minFaceDetectionConfidence: 0.5,
+                                minFacePresenceConfidence: 0.5,
+                                minTrackingConfidence: 0.5,
+                                outputFaceBlendshapes: false,
+                                outputFacialTransformationMatrixes: false
+                            });
+                            faceReady = true;
+                            console.log('[MediaPipe] ✅ 面部模型就绪 (CPU fallback)');
+                        } catch (faceErr2) {
+                            console.warn('[MediaPipe] 面部模型初始化失败:', faceErr2);
+                        }
                     }
                 }
 
