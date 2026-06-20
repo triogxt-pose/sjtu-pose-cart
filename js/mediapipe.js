@@ -312,7 +312,7 @@
         ctx.stroke();
     }
 
-    // ============ 计算手部匹配度（与参考模板比较） ============
+    // ============ 计算手部匹配度（仅比较手势形状，不要求位置重合） ============
     function calculateHandMatchScore(handLandmarksArray) {
         if (!handLandmarksArray || handLandmarksArray.length === 0) return null;
         if (!currentPose || !currentPose.skeleton) return null;
@@ -320,36 +320,57 @@
         const template = getSkeletonTemplate(currentPose.skeleton);
         if (!template || !template.persons || template.persons.length === 0) return null;
 
-        const handScale = 0.08; // 相对归一化的手部尺度
-        let bestAvgDist = Infinity;
+        let bestScore = Infinity;
         let foundMatch = false;
 
-        for (let refIdx = 0; refIdx < Math.min(template.persons.length, 2); refIdx++) {
-            const refP = template.persons[refIdx];
-            const refHands = [];
-            if (refP.handLeft) refHands.push(refP.handLeft);
-            if (refP.handRight) refHands.push(refP.handRight);
-            if (refHands.length === 0) continue;
+        // 将手部以手腕为原点，最大向量为单位长度归一化
+        function normalizeHand(landmarks) {
+            if (!landmarks || landmarks.length < 21) return null;
+            const wrist = landmarks[0];
+            const vectors = [];
+            let maxLen = 0;
+            for (let i = 0; i < 21; i++) {
+                const vx = landmarks[i].x - wrist.x;
+                const vy = landmarks[i].y - wrist.y;
+                const len = Math.sqrt(vx * vx + vy * vy);
+                vectors.push({ x: vx, y: vy, len: len });
+                if (len > maxLen) maxLen = len;
+            }
+            if (maxLen < 0.001) return null;
+            return vectors.map(v => ({ x: v.x / maxLen, y: v.y / maxLen }));
+        }
 
-            for (let hIdx = 0; hIdx < handLandmarksArray.length; hIdx++) {
-                const userHand = handLandmarksArray[hIdx];
-                if (!userHand || userHand.length !== 21) continue;
+        for (let hIdx = 0; hIdx < handLandmarksArray.length; hIdx++) {
+            const userNorm = normalizeHand(handLandmarksArray[hIdx]);
+            if (!userNorm) continue;
+
+            for (let refIdx = 0; refIdx < Math.min(template.persons.length, 2); refIdx++) {
+                const refP = template.persons[refIdx];
+                const refHands = [];
+                if (refP.handLeft) refHands.push(refP.handLeft);
+                if (refP.handRight) refHands.push(refP.handRight);
 
                 for (let rh of refHands) {
+                    // 参考照片镜像：摄像头为镜像显示，参考点 x 需要翻转
+                    const mirroredRef = rh.map(pt => ({ x: 1 - pt.x, y: pt.y }));
+                    const refNorm = normalizeHand(mirroredRef);
+                    if (!refNorm) continue;
+
                     let totalDist = 0;
                     let count = 0;
+                    const fingerTips = [4, 8, 12, 16, 20]; // 五指尖
+                    const fingerJoints = [3, 5, 7, 9, 11, 13, 15, 17, 19]; // 指关节
                     for (let i = 0; i < 21; i++) {
-                        const refPt = rh[i];
-                        const up = userHand[i];
-                        if (!refPt || !up) continue;
-                        const dx = ((1 - refPt.x) - up.x) / handScale;
-                        const dy = (refPt.y - up.y) / handScale;
-                        totalDist += Math.sqrt(dx * dx + dy * dy);
-                        count++;
+                        const dx = refNorm[i].x - userNorm[i].x;
+                        const dy = refNorm[i].y - userNorm[i].y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const weight = fingerTips.includes(i) ? 2.0 : (fingerJoints.includes(i) ? 1.5 : 1.0);
+                        totalDist += dist * weight;
+                        count += weight;
                     }
-                    if (count > 10) {
+                    if (count > 0) {
                         const avg = totalDist / count;
-                        if (avg < bestAvgDist) bestAvgDist = avg;
+                        if (avg < bestScore) bestScore = avg;
                         foundMatch = true;
                     }
                 }
@@ -357,10 +378,10 @@
         }
 
         if (!foundMatch) return null;
-        return Math.min(bestAvgDist, 1);
+        return Math.min(bestScore, 1);
     }
 
-    // ============ 计算面部匹配度（与参考模板比较） ============
+    // ============ 计算面部匹配度（仅比较面部朝向，不要求位置重合） ============
     function calculateFaceMatchScore(faceLandmarksArray) {
         if (!faceLandmarksArray || faceLandmarksArray.length === 0) return null;
         if (!currentPose || !currentPose.skeleton) return null;
@@ -368,42 +389,62 @@
         const template = getSkeletonTemplate(currentPose.skeleton);
         if (!template || !template.persons) return null;
 
-        const faceScale = 0.08;
-        let bestAvgDist = Infinity;
+        let bestScore = Infinity;
         let foundMatch = false;
+
+        function normalizeFace(landmarks) {
+            if (!landmarks || landmarks.length < 5) return null;
+            const nose = landmarks[1];
+            if (!nose) return null;
+            const vectors = [];
+            let maxLen = 0;
+            for (let i = 0; i < landmarks.length; i++) {
+                if (!landmarks[i]) continue;
+                const vx = landmarks[i].x - nose.x;
+                const vy = landmarks[i].y - nose.y;
+                const len = Math.sqrt(vx * vx + vy * vy);
+                vectors.push({ x: vx, y: vy, idx: i });
+                if (len > maxLen) maxLen = len;
+            }
+            if (maxLen < 0.001) return null;
+            return vectors.map(v => ({ x: v.x / maxLen, y: v.y / maxLen, idx: v.idx }));
+        }
 
         for (let refIdx = 0; refIdx < Math.min(template.persons.length, 2); refIdx++) {
             const refP = template.persons[refIdx];
             if (!refP.face) continue;
             const refFace = [];
-            refP.face.forEach(pt => { refFace[pt.i] = { x: pt.x, y: pt.y }; });
+            refP.face.forEach(pt => { refFace[pt.i] = { x: 1 - pt.x, y: pt.y }; });
+
+            const refNorm = normalizeFace(refFace);
+            if (!refNorm) continue;
 
             for (let fIdx = 0; fIdx < Math.min(2, faceLandmarksArray.length); fIdx++) {
-                const userFace = faceLandmarksArray[fIdx];
-                if (!userFace || userFace.length < 100) continue;
+                const userNorm = normalizeFace(faceLandmarksArray[fIdx]);
+                if (!userNorm) continue;
 
+                const criticalPoints = [1, 33, 133, 263, 362, 61, 291, 152, 10, 199];
                 let totalDist = 0;
                 let count = 0;
-                const criticalPoints = [1, 10, 33, 133, 263, 362, 61, 291, 152];
                 for (let idx of criticalPoints) {
-                    const refPt = refFace[idx];
-                    const up = userFace[idx];
-                    if (!refPt || !up) continue;
-                    const dx = ((1 - refPt.x) - up.x) / faceScale;
-                    const dy = (refPt.y - up.y) / faceScale;
+                    const refPt = refNorm.find(v => v.idx === idx);
+                    const upPt = userNorm.find(v => v.idx === idx);
+                    if (!refPt || !upPt) continue;
+                    const dx = refPt.x - upPt.x;
+                    const dy = refPt.y - upPt.y;
                     totalDist += Math.sqrt(dx * dx + dy * dy);
                     count++;
                 }
                 if (count > 3) {
                     const avg = totalDist / count;
-                    if (avg < bestAvgDist) bestAvgDist = avg;
+                    if (avg < bestScore) bestScore = avg;
                     foundMatch = true;
                 }
             }
         }
 
         if (!foundMatch) return null;
-        return Math.min(bestAvgDist, 1);
+        return Math.min(bestScore, 1);
     }
 
     // ============ 综合匹配度（手部 + 面部） ============
@@ -599,19 +640,22 @@
                 if (statusEl) {
                     if (cachedMatchScore !== null) {
                         const pct = Math.max(0, Math.min(100, Math.round((1 - cachedMatchScore) * 100)));
-                        if (cachedMatchScore < 0.15) {
-                            statusEl.textContent = '✅ 完美匹配！可以拍照了！(' + pct + '%)';
+                        if (pct >= 70) {
+                            statusEl.innerHTML = '✅ 可以拍照了！匹配度 <b style="font-size:1.2em">' + pct + '%</b>';
                             statusEl.style.color = '#2ecc71';
-                        } else if (cachedMatchScore < 0.30) {
-                            statusEl.textContent = '🟡 接近了 (' + pct + '%)';
+                        } else if (pct >= 50) {
+                            statusEl.innerHTML = '🟡 接近了 匹配度 <b style="font-size:1.2em">' + pct + '%</b>';
                             statusEl.style.color = '#f1c40f';
                         } else {
-                            statusEl.textContent = '✋ 继续调整姿势... (' + pct + '%)';
+                            statusEl.innerHTML = '✋ 继续调整姿势... 匹配度 <b style="font-size:1.2em">' + pct + '%</b>';
                             statusEl.style.color = '#ff9f43';
                         }
                     } else if (modelReadyShown && !cachedHands && !cachedFace) {
                         statusEl.textContent = '🔍 未检测到手和脸，请面向摄像头并伸出双手...';
                         statusEl.style.color = '#e74c3c';
+                    } else if (modelReadyShown) {
+                        statusEl.textContent = '✋ 正在检测中，请调整姿势...';
+                        statusEl.style.color = '#ff9f43';
                     }
                 }
 
