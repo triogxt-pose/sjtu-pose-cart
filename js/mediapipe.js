@@ -1,10 +1,8 @@
 // ============================================================
-// ===== MediaPipe 实时骨骼检测 + 姿势匹配引导系统 v3.0 =====
+// ===== MediaPipe 实时骨架检测 + 姿势匹配引导系统 v5.0 =====
 // ============================================================
-// 重要更新：
-//   - 使用 OFFLINE 骨骼模板（js/skeleton-templates.js）
-//   - 不再依赖 MediaPipe 图片识别来提取参考照片骨骼
-//   - 仅对用户摄像头画面进行实时骨骼检测
+//  更新：仅使用 HandLandmarker + FaceLandmarker，移除 PoseLandmarker
+//        参考框架包含：手部关键点 + 面部网格
 // ============================================================
 
 (function () {
@@ -16,31 +14,61 @@
     let currentPose = null;
     let canvasCtx = null;
     let showSkeleton = true;
-    let poseLandmarkerVideo = null;
-    let videoLandmarkerReady = false;
-    let initPromise = null; // 防止重复初始化的锁
 
-    // ============ 骨骼连接关系 ============
-    const SKELETON_CONNECTIONS = [
-        [0, 11], [0, 12],
-        [11, 12], [11, 23], [12, 24], [23, 24],
-        [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
-        [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
-        [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
-        [24, 26], [26, 28], [28, 30], [28, 32], [30, 32]
+    // 两个模型实例（手部 + 面部）
+    let handLandmarkerVideo = null;
+    let faceLandmarkerVideo = null;
+
+    // 模型就绪状态
+    let handsReady = false;
+    let faceReady = false;
+
+    // 初始化锁
+    let initPromise = null;
+
+    // ============ 手部连接（21 个关键点） ============
+    const HAND_CONNECTIONS = [
+        // 拇指
+        [0, 1], [1, 2], [2, 3], [3, 4],
+        // 食指
+        [0, 5], [5, 6], [6, 7], [7, 8],
+        // 中指
+        [0, 9], [9, 10], [10, 11], [11, 12],
+        // 无名指
+        [0, 13], [13, 14], [14, 15], [15, 16],
+        // 小指
+        [0, 17], [17, 18], [18, 19], [19, 20],
+        // 指根连接
+        [5, 9], [9, 13], [13, 17]
     ];
 
-    // ============ 多人配色方案 ============
-    const PERSON_COLOR_PALETTE = [
-        { main: '#00a8ff', outline: 'rgba(0,60,120,0.7)', glow: 'rgba(0,168,255,0.4)', box: 'rgba(0,168,255,0.8)' },
-        { main: '#ff64ff', outline: 'rgba(120,40,120,0.7)', glow: 'rgba(255,100,255,0.4)', box: 'rgba(255,100,255,0.8)' },
-        { main: '#64ffc8', outline: 'rgba(40,120,80,0.7)', glow: 'rgba(100,255,200,0.4)', box: 'rgba(100,255,200,0.8)' },
-        { main: '#ffdc64', outline: 'rgba(140,110,40,0.7)', glow: 'rgba(255,220,100,0.4)', box: 'rgba(255,220,100,0.8)' },
-        { main: '#ff9664', outline: 'rgba(160,80,40,0.7)', glow: 'rgba(255,150,100,0.4)', box: 'rgba(255,150,100,0.8)' },
-        { main: '#ff6e6e', outline: 'rgba(160,60,60,0.7)', glow: 'rgba(255,110,110,0.4)', box: 'rgba(255,110,110,0.8)' }
-    ];
+    // ============ 面部网格简化连接（从 478 点中选取关键轮廓） ============
+    // 脸型轮廓（33 个点，沿面部边缘）
+    const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+                       397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+                       172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
 
-    // ============ 参考骨架颜色（白色） ============
+    // 左眼（16 个点）
+    const LEFT_EYE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
+    // 右眼（16 个点）
+    const RIGHT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398];
+
+    // 左眉（5 个点）
+    const LEFT_EYEBROW = [70, 63, 105, 66, 107];
+    // 右眉（5 个点）
+    const RIGHT_EYEBROW = [336, 296, 334, 293, 300];
+
+    // 鼻子（9 个点）
+    const NOSE_BRIDGE = [168, 6, 197, 195, 5, 4, 1, 19, 94];
+    // 鼻翼
+    const NOSE_WINGS = [98, 97, 2, 326, 327];
+
+    // 嘴唇外轮廓（12 个点）
+    const LIPS_OUTER = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185];
+    // 嘴唇内轮廓（8 个点）
+    const LIPS_INNER = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
+
+    // ============ 配色方案 ============
     const REFERENCE_COLORS = {
         main: 'rgba(255,255,255,0.95)',
         outline: 'rgba(0,0,0,0.7)',
@@ -48,7 +76,22 @@
         box: 'rgba(255,255,255,0.7)'
     };
 
-    // ============ 获取离线骨骼模板 ============
+    const HAND_COLORS = {
+        main: '#ff9f43',
+        outline: 'rgba(140,60,0,0.7)',
+        glow: 'rgba(255,159,67,0.5)',
+        joint: '#ffbe76'
+    };
+
+    const FACE_COLORS = {
+        main: 'rgba(46, 204, 113, 0.7)',
+        outline: 'rgba(20, 100, 50, 0.5)',
+        glow: 'rgba(46, 204, 113, 0.3)',
+        eye: 'rgba(52, 152, 219, 0.8)',
+        lip: 'rgba(231, 76, 60, 0.6)'
+    };
+
+    // ============ 获取离线骨架模板 ============
     function getSkeletonTemplate(skeletonId) {
         if (window.SKELETON_TEMPLATES && window.SKELETON_TEMPLATES[skeletonId]) {
             return window.SKELETON_TEMPLATES[skeletonId];
@@ -56,168 +99,342 @@
         return null;
     }
 
-    // ============ 绘制单人骨架 ============
-    function drawPersonSkeleton(ctx, person, offsetX, offsetY, areaW, areaH, personIdx, isReference) {
-        const colors = isReference ? REFERENCE_COLORS : PERSON_COLOR_PALETTE[personIdx % PERSON_COLOR_PALETTE.length];
+    // ============ 绘制手部关键点 ============
+    function drawHandLandmarks(ctx, landmarks, offsetX, offsetY, areaW, areaH, handLabel, isReference) {
+        if (!landmarks || landmarks.length === 0) return;
 
-        let minX = 1, maxX = 0, minY = 1, maxY = 0, found = false;
-        for (let i = 0; i < 33; i++) {
-            const pt = person[i];
-            if (pt && (pt.v !== undefined ? pt.v : 1) > 0.3) {
-                if (pt.x < minX) minX = pt.x;
-                if (pt.x > maxX) maxX = pt.x;
-                if (pt.y < minY) minY = pt.y;
-                if (pt.y > maxY) maxY = pt.y;
-                found = true;
-            }
-        }
-        if (!found) return;
+        const pts = [];
+        landmarks.forEach((lm, i) => {
+            pts[i] = {
+                x: offsetX + lm.x * areaW,
+                y: offsetY + lm.y * areaH
+            };
+        });
 
-        // 边界框 + 编号
-        const boxPadX = (maxX - minX) * 0.18;
-        const boxPadYTop = (maxY - minY) * 0.12;
-        const boxPadYBottom = (maxY - minY) * 0.05;
+        // 参考模式：更细的线条 + 半透明 + 白色
+        // 检测模式：原有的粗线条 + 橙色
+        const lineOuter = isReference ? 2 : 4;
+        const lineInner = isReference ? 1.2 : 2;
+        const glow = isReference ? 4 : 8;
+        const baseColor = isReference ? 'rgba(255, 255, 255, 0.75)' : HAND_COLORS.main;
+        const outlineColor = isReference ? 'rgba(255, 255, 255, 0.25)' : HAND_COLORS.outline;
+        const jointColor = isReference ? 'rgba(255, 255, 255, 0.85)' : HAND_COLORS.joint;
+        const tipColor = isReference ? 'rgba(255, 180, 100, 0.9)' : '#ff6348';
 
-        const bx = offsetX + Math.max(0, minX - boxPadX) * areaW;
-        const by = offsetY + Math.max(0, minY - boxPadYTop) * areaH;
-        const bw2 = (Math.min(1, maxX + boxPadX) - Math.max(0, minX - boxPadX)) * areaW;
-        const bh2 = (Math.min(1, maxY + boxPadYBottom) - Math.max(0, minY - boxPadYTop)) * areaH;
-
-        ctx.save();
-        ctx.strokeStyle = colors.box;
-        ctx.lineWidth = 2;
-        if (isReference) ctx.setLineDash([6, 5]);
-        ctx.strokeRect(bx, by, bw2, bh2);
-        ctx.setLineDash([]);
-
-        const label = isReference ? `参考${personIdx + 1}` : `人物${personIdx + 1}`;
-        ctx.font = 'bold 12px sans-serif';
-        const labelW = ctx.measureText(label).width + 14;
-        ctx.fillStyle = colors.box;
-        ctx.fillRect(bx, by - 18, labelW, 18);
-        ctx.fillStyle = isReference ? '#000' : 'rgba(255,255,255,0.95)';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, bx + 7, by - 9);
-        ctx.restore();
-
-        // 骨架连接
-        SKELETON_CONNECTIONS.forEach(([from, to]) => {
-            const p1 = person[from];
-            const p2 = person[to];
+        // 绘制连接线
+        HAND_CONNECTIONS.forEach(([from, to]) => {
+            const p1 = pts[from];
+            const p2 = pts[to];
             if (!p1 || !p2) return;
-            const v1 = (p1.v !== undefined ? p1.v : 1);
-            const v2 = (p2.v !== undefined ? p2.v : 1);
-            if (v1 < 0.3 || v2 < 0.3) return;
 
-            const x1 = offsetX + p1.x * areaW;
-            const y1 = offsetY + p1.y * areaH;
-            const x2 = offsetX + p2.x * areaW;
-            const y2 = offsetY + p2.y * areaH;
-
-            ctx.strokeStyle = colors.outline;
-            ctx.lineWidth = 6;
+            ctx.strokeStyle = outlineColor;
+            ctx.lineWidth = lineOuter;
             ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
             ctx.stroke();
 
-            ctx.shadowColor = colors.glow;
-            ctx.shadowBlur = isReference ? 6 : 12;
-            ctx.strokeStyle = colors.main;
-            ctx.lineWidth = 3;
+            if (isReference) {
+                ctx.shadowBlur = 0;
+            } else {
+                ctx.shadowColor = HAND_COLORS.glow;
+                ctx.shadowBlur = glow;
+            }
+            ctx.strokeStyle = baseColor;
+            ctx.lineWidth = lineInner;
             ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
             ctx.stroke();
             ctx.shadowBlur = 0;
         });
 
-        // 关节点
-        for (let i = 0; i < 33; i++) {
-            const pt = person[i];
-            if (!pt) continue;
-            const visibility = (pt.v !== undefined ? pt.v : 1);
-            if (visibility < 0.3) continue;
-
-            const x = offsetX + pt.x * areaW;
-            const y = offsetY + pt.y * areaH;
-            const isMajor = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].includes(i);
-            const r = isMajor ? 5 : 3;
+        // 绘制关节点
+        landmarks.forEach((lm, i) => {
+            const x = pts[i].x;
+            const y = pts[i].y;
+            const isTip = [4, 8, 12, 16, 20].includes(i);
+            const isBase = [0, 1, 5, 9, 13, 17].includes(i);
+            let r = isTip ? 4 : (isBase ? 5 : 3);
+            if (isReference) r = isTip ? 2.5 : (isBase ? 3 : 1.8);
 
             ctx.beginPath();
-            ctx.arc(x, y, r + 2, 0, 2 * Math.PI);
-            ctx.fillStyle = colors.outline;
+            ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+            ctx.fillStyle = outlineColor;
             ctx.fill();
 
             ctx.beginPath();
-            ctx.arc(x, y, r, 0, 2 * Math.PI);
-            ctx.fillStyle = colors.main;
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = isTip ? tipColor : jointColor;
             ctx.fill();
 
-            if (isMajor) {
+            if (!isReference && isBase) {
                 ctx.beginPath();
-                ctx.arc(x - 1, y - 1, Math.max(1, r * 0.4), 0, 2 * Math.PI);
+                ctx.arc(x - 1, y - 1, 2, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(255,255,255,0.9)';
                 ctx.fill();
             }
+        });
+
+        // 手部标签
+        if (handLabel && pts[0]) {
+            ctx.font = isReference ? '11px sans-serif' : 'bold 10px sans-serif';
+            ctx.fillStyle = isReference ? 'rgba(255, 255, 255, 0.6)' : HAND_COLORS.main;
+            ctx.textAlign = 'center';
+            ctx.fillText(handLabel, pts[0].x, pts[0].y - 10);
         }
     }
 
-    // ============ 计算匹配度 ============
-    function calculateMatchScore(userLandmarksArray) {
-        if (!currentPose || !currentPose.skeleton || !userLandmarksArray || userLandmarksArray.length === 0) {
-            return null;
+    // ============ 绘制面部网格 ============
+    function drawFaceMesh(ctx, landmarks, offsetX, offsetY, areaW, areaH, isReference) {
+        if (!landmarks || landmarks.length === 0) return;
+
+        // 将归一化坐标转换为画布坐标
+        const pts = [];
+        landmarks.forEach((lm, i) => {
+            pts[i] = {
+                x: offsetX + lm.x * areaW,
+                y: offsetY + lm.y * areaH
+            };
+        });
+
+        // 参考模式：更细线条、白色半透明
+        // 检测模式：原有绿色粗线条
+        const ovalOuter = isReference ? 2 : 3;
+        const ovalInner = isReference ? 1 : 1.5;
+        const faceOuter = isReference ? 1.5 : 2.5;
+        const faceInner = isReference ? 0.8 : 1.5;
+        const lipLine = isReference ? 1 : 1.5;
+        const browLine = isReference ? 1 : 2;
+
+        const refMain = 'rgba(255, 255, 255, 0.7)';
+        const refOutline = 'rgba(255, 255, 255, 0.25)';
+        const refEye = 'rgba(100, 180, 255, 0.75)';
+        const refLip = 'rgba(255, 150, 150, 0.75)';
+
+        // 绘制脸型轮廓
+        ctx.strokeStyle = isReference ? refOutline : FACE_COLORS.outline;
+        ctx.lineWidth = ovalOuter;
+        ctx.beginPath();
+        for (let i = 0; i < FACE_OVAL.length - 1; i++) {
+            const p = pts[FACE_OVAL[i]];
+            if (!p) continue;
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
         }
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.strokeStyle = isReference ? refMain : FACE_COLORS.main;
+        ctx.lineWidth = ovalInner;
+        ctx.beginPath();
+        for (let i = 0; i < FACE_OVAL.length - 1; i++) {
+            const p = pts[FACE_OVAL[i]];
+            if (!p) continue;
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        // 绘制眼睛
+        [LEFT_EYE, RIGHT_EYE].forEach(eyePoints => {
+            ctx.strokeStyle = isReference ? refOutline : FACE_COLORS.outline;
+            ctx.lineWidth = faceOuter;
+            ctx.beginPath();
+            let first = true;
+            eyePoints.forEach(idx => {
+                const p = pts[idx];
+                if (!p) return;
+                if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.strokeStyle = isReference ? refEye : FACE_COLORS.eye;
+            ctx.lineWidth = faceInner;
+            ctx.beginPath();
+            first = true;
+            eyePoints.forEach(idx => {
+                const p = pts[idx];
+                if (!p) return;
+                if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+        });
+
+        // 绘制眉毛
+        [LEFT_EYEBROW, RIGHT_EYEBROW].forEach(browPoints => {
+            ctx.strokeStyle = isReference ? refMain : FACE_COLORS.main;
+            ctx.lineWidth = browLine;
+            ctx.beginPath();
+            let first = true;
+            browPoints.forEach(idx => {
+                const p = pts[idx];
+                if (!p) return;
+                if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+        });
+
+        // 绘制嘴唇
+        [LIPS_OUTER, LIPS_INNER].forEach((lipPoints, lipIdx) => {
+            ctx.strokeStyle = isReference ? (lipIdx === 0 ? refOutline : refLip) : (lipIdx === 0 ? FACE_COLORS.outline : FACE_COLORS.lip);
+            ctx.lineWidth = lipLine;
+            ctx.beginPath();
+            let first = true;
+            lipPoints.forEach(idx => {
+                const p = pts[idx];
+                if (!p) return;
+                if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+        });
+
+        // 绘制鼻子
+        ctx.strokeStyle = isReference ? refMain : FACE_COLORS.main;
+        ctx.lineWidth = faceInner;
+        ctx.beginPath();
+        let firstNose = true;
+        NOSE_BRIDGE.forEach(idx => {
+            const p = pts[idx];
+            if (!p) return;
+            if (firstNose) { ctx.moveTo(p.x, p.y); firstNose = false; }
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+    }
+
+    // ============ 计算手部匹配度（与参考模板比较） ============
+    function calculateHandMatchScore(handLandmarksArray) {
+        if (!handLandmarksArray || handLandmarksArray.length === 0) return null;
+        if (!currentPose || !currentPose.skeleton) return null;
 
         const template = getSkeletonTemplate(currentPose.skeleton);
-        if (!template) return null;
+        if (!template || !template.persons || template.persons.length === 0) return null;
 
-        const majorJoints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+        const handScale = 0.08; // 相对归一化的手部尺度
         let bestAvgDist = Infinity;
+        let foundMatch = false;
 
-        // 只取参考中第一个人物进行匹配（用户通常一人）
         for (let refIdx = 0; refIdx < Math.min(template.persons.length, 2); refIdx++) {
             const refP = template.persons[refIdx];
-            if (!refP[11] || !refP[12]) continue;
+            const refHands = [];
+            if (refP.handLeft) refHands.push(refP.handLeft);
+            if (refP.handRight) refHands.push(refP.handRight);
+            if (refHands.length === 0) continue;
 
-            const refShoulderDist = Math.abs(refP[11].x - refP[12].x) || 0.15;
-            let refTorsoH = 0.15;
-            if (refP[23] && refP[24]) {
-                refTorsoH = Math.abs((refP[11].y + refP[12].y) / 2 - (refP[23].y + refP[24].y) / 2) || 0.15;
-            }
-            const refScale = Math.max(refShoulderDist, refTorsoH);
+            for (let hIdx = 0; hIdx < handLandmarksArray.length; hIdx++) {
+                const userHand = handLandmarksArray[hIdx];
+                if (!userHand || userHand.length !== 21) continue;
 
-            for (let userIdx = 0; userIdx < userLandmarksArray.length; userIdx++) {
-                const user = userLandmarksArray[userIdx];
-                let totalDist = 0;
-                let count = 0;
-
-                majorJoints.forEach(i => {
-                    const ref = refP[i];
-                    const up = user[i];
-                    if (!ref || !up) return;
-                    const uv = (typeof up.visibility === 'number' ? up.visibility : 1);
-                    if (uv < 0.4) return;
-
-                    const dx = (ref.x - up.x) / refScale;
-                    const dy = (ref.y - up.y) / refScale;
-                    totalDist += Math.sqrt(dx * dx + dy * dy);
-                    count++;
-                });
-
-                if (count > 6) {
-                    const avg = totalDist / count;
-                    if (avg < bestAvgDist) bestAvgDist = avg;
+                for (let rh of refHands) {
+                    let totalDist = 0;
+                    let count = 0;
+                    for (let i = 0; i < 21; i++) {
+                        const refPt = rh[i];
+                        const up = userHand[i];
+                        if (!refPt || !up) continue;
+                        const dx = ((1 - refPt.x) - up.x) / handScale;
+                        const dy = (refPt.y - up.y) / handScale;
+                        totalDist += Math.sqrt(dx * dx + dy * dy);
+                        count++;
+                    }
+                    if (count > 10) {
+                        const avg = totalDist / count;
+                        if (avg < bestAvgDist) bestAvgDist = avg;
+                        foundMatch = true;
+                    }
                 }
             }
         }
 
-        return isFinite(bestAvgDist) ? bestAvgDist : null;
+        if (!foundMatch) return null;
+        return Math.min(bestAvgDist, 1);
     }
 
-    // ============ 绘制参考照片骨架（在主应用中） ============
+    // ============ 计算面部匹配度（与参考模板比较） ============
+    function calculateFaceMatchScore(faceLandmarksArray) {
+        if (!faceLandmarksArray || faceLandmarksArray.length === 0) return null;
+        if (!currentPose || !currentPose.skeleton) return null;
+
+        const template = getSkeletonTemplate(currentPose.skeleton);
+        if (!template || !template.persons) return null;
+
+        const faceScale = 0.08;
+        let bestAvgDist = Infinity;
+        let foundMatch = false;
+
+        for (let refIdx = 0; refIdx < Math.min(template.persons.length, 2); refIdx++) {
+            const refP = template.persons[refIdx];
+            if (!refP.face) continue;
+            const refFace = [];
+            refP.face.forEach(pt => { refFace[pt.i] = { x: pt.x, y: pt.y }; });
+
+            for (let fIdx = 0; fIdx < Math.min(2, faceLandmarksArray.length); fIdx++) {
+                const userFace = faceLandmarksArray[fIdx];
+                if (!userFace || userFace.length < 100) continue;
+
+                let totalDist = 0;
+                let count = 0;
+                const criticalPoints = [1, 10, 33, 133, 263, 362, 61, 291, 152];
+                for (let idx of criticalPoints) {
+                    const refPt = refFace[idx];
+                    const up = userFace[idx];
+                    if (!refPt || !up) continue;
+                    const dx = ((1 - refPt.x) - up.x) / faceScale;
+                    const dy = (refPt.y - up.y) / faceScale;
+                    totalDist += Math.sqrt(dx * dx + dy * dy);
+                    count++;
+                }
+                if (count > 3) {
+                    const avg = totalDist / count;
+                    if (avg < bestAvgDist) bestAvgDist = avg;
+                    foundMatch = true;
+                }
+            }
+        }
+
+        if (!foundMatch) return null;
+        return Math.min(bestAvgDist, 1);
+    }
+
+    // ============ 综合匹配度（手部 + 面部） ============
+    function calculateTotalMatchScore(handResult, faceResult) {
+        const scores = [];
+        const weights = [];
+
+        const handScore = calculateHandMatchScore(handResult);
+        if (handScore !== null) {
+            scores.push(handScore);
+            weights.push(0.60); // 手部权重更高
+        }
+
+        const faceScore = calculateFaceMatchScore(faceResult);
+        if (faceScore !== null) {
+            scores.push(faceScore);
+            weights.push(0.40);
+        }
+
+        if (scores.length === 0) return null;
+
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+        let weightedScore = 0;
+        for (let i = 0; i < scores.length; i++) {
+            weightedScore += scores[i] * (weights[i] / totalWeight);
+        }
+
+        return weightedScore;
+    }
+
+    // ============ 绘制参考骨架（在参考照片上）
     function renderReferenceSkeletonOnImage(imageCanvas, overlayCanvas) {
         if (!currentPose || !currentPose.skeleton) return;
 
@@ -232,7 +449,19 @@
         ctx.clearRect(0, 0, bw, bh);
 
         template.persons.forEach((person, idx) => {
-            drawPersonSkeleton(ctx, person, 0, 0, bw, bh, idx, true);
+            // 参考手
+            if (person.handLeft) {
+                drawHandLandmarks(ctx, person.handLeft, 0, 0, bw, bh, null, true);
+            }
+            if (person.handRight) {
+                drawHandLandmarks(ctx, person.handRight, 0, 0, bw, bh, null, true);
+            }
+            // 3. 参考脸
+            if (person.face) {
+                const refFace = [];
+                person.face.forEach(pt => { refFace[pt.i] = { x: pt.x, y: pt.y }; });
+                drawFaceMesh(ctx, refFace, 0, 0, bw, bh, true);
+            }
         });
     }
 
@@ -240,12 +469,14 @@
     function startDetectionLoop(videoEl, canvasEl) {
         if (!videoEl || !canvasEl) return;
         const ctx = canvasEl.getContext('2d');
-        let lastDetectTime = 0;
+        let lastHandTime = 0;
+        let lastFaceTime = 0;
         let frameCount = 0;
         let detectCount = 0;
-        let cachedPersons = null;       // 缓存上次检测到的用户骨架（person 格式）
-        let cachedMatchScore = null;    // 缓存上次匹配分数
-        let modelReadyShown = false;    // 是否已显示 AI 就绪状态
+        let cachedHands = null;
+        let cachedFace = null;
+        let cachedMatchScore = null;
+        let modelReadyShown = false;
 
         function loop(now) {
             try {
@@ -261,28 +492,35 @@
 
                 ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
-                // 先绘制参考骨架（经典姿势模板，白色虚线）—— 不受 AI 加载影响
+                // 先绘制参考人物的骨架
                 if (currentPose && currentPose.skeleton) {
                     const template = getSkeletonTemplate(currentPose.skeleton);
                     if (template && template.persons) {
-                        template.persons.forEach((person, idx) => {
-                            const mirrored = {};
-                            for (let i = 0; i < 33; i++) {
-                                if (person[i]) {
-                                    mirrored[i] = { x: 1 - person[i].x, y: person[i].y, v: person[i].v };
-                                }
+                        // 画参考骨架线条（更细、半透明）
+                        template.persons.forEach(person => {
+                            if (person.handLeft) {
+                                const mirroredHand = person.handLeft.map(pt => ({ x: 1 - pt.x, y: pt.y }));
+                                drawHandLandmarks(ctx, mirroredHand, 0, 0, canvasEl.width, canvasEl.height, null, true);
                             }
-                            drawPersonSkeleton(ctx, mirrored, 0, 0, canvasEl.width, canvasEl.height, idx, true);
+                            if (person.handRight) {
+                                const mirroredHand = person.handRight.map(pt => ({ x: 1 - pt.x, y: pt.y }));
+                                drawHandLandmarks(ctx, mirroredHand, 0, 0, canvasEl.width, canvasEl.height, null, true);
+                            }
+                            if (person.face) {
+                                const mirroredFace = [];
+                                person.face.forEach(pt => { mirroredFace[pt.i] = { x: 1 - pt.x, y: pt.y }; });
+                                drawFaceMesh(ctx, mirroredFace, 0, 0, canvasEl.width, canvasEl.height, true);
+                            }
                         });
                     }
                 }
 
                 // AI 模型未就绪时显示提示
-                if (!videoLandmarkerReady) {
+                if (!handsReady && !faceReady) {
                     const statusEl = document.getElementById('pose-match-status');
                     if (statusEl && !statusEl._aiLoadingShown) {
                         statusEl._aiLoadingShown = true;
-                        statusEl.textContent = '⏳ AI 模型加载中...（参考骨架已显示）';
+                        statusEl.textContent = '⏳ AI 模型加载中...';
                         statusEl.style.color = '#f1c40f';
                     }
                     animationFrameId = requestAnimationFrame(loop);
@@ -294,77 +532,95 @@
                     modelReadyShown = true;
                     const statusEl = document.getElementById('pose-match-status');
                     if (statusEl) {
-                        statusEl.textContent = '📐 调整姿势以匹配参考骨架...';
-                        statusEl.style.color = '#00a8ff';
+                        statusEl.textContent = '✋ 调整手部和面部姿势以匹配参考...';
+                        statusEl.style.color = '#ff9f43';
                         delete statusEl._aiLoadingShown;
                     }
                 }
 
-                // === 尝试进行骨骼检测 ===
-                let landmarks = null;
-                if (poseLandmarkerVideo && videoEl.readyState >= 2 && (now - lastDetectTime) >= 40) {
+                // === 分时检测：手部每 80ms，面部每 120ms ===
+                let handLandmarks = null;
+                let faceLandmarks = null;
+
+                // 手部检测（每 80ms）
+                if (handLandmarkerVideo && handsReady && videoEl.readyState >= 2 && (now - lastHandTime) >= 80) {
                     try {
-                        const result = poseLandmarkerVideo.detectForVideo(videoEl, now);
-                        if (result && result.landmarks) {
-                            landmarks = result.landmarks;
-                            lastDetectTime = now;
+                        const handResult = handLandmarkerVideo.detectForVideo(videoEl, now);
+                        if (handResult && handResult.landmarks) {
+                            handLandmarks = handResult.landmarks;
+                            cachedHands = handResult.landmarks;
+                            lastHandTime = now;
                             detectCount++;
-
-                            // 转换为 person 格式并缓存
-                            cachedPersons = [];
-                            landmarks.forEach((lm) => {
-                                const person = {};
-                                lm.forEach((p, i) => {
-                                    person[i] = {
-                                        x: p.x,
-                                        y: p.y,
-                                        v: (typeof p.visibility === 'number' ? p.visibility : 1)
-                                    };
-                                });
-                                cachedPersons.push(person);
-                            });
-
-                            // 计算匹配分数并缓存
-                            cachedMatchScore = calculateMatchScore(landmarks);
                         }
                     } catch (e) {
-                        console.warn('[MediaPipe] detectForVideo 出错:', e.message || e);
+                        console.warn('[MediaPipe] 手部检测出错:', e.message || e);
                     }
                 }
 
-                // === 绘制用户骨架（使用缓存，避免闪烁）===
-                if (cachedPersons && cachedPersons.length > 0) {
-                    cachedPersons.forEach((person, idx) => {
-                        drawPersonSkeleton(ctx, person, 0, 0, canvasEl.width, canvasEl.height, idx, false);
+                // 面部检测（每 120ms）
+                if (faceLandmarkerVideo && faceReady && videoEl.readyState >= 2 && (now - lastFaceTime) >= 120) {
+                    try {
+                        const faceResult = faceLandmarkerVideo.detectForVideo(videoEl, now);
+                        if (faceResult && faceResult.faceLandmarks) {
+                            faceLandmarks = faceResult.faceLandmarks;
+                            cachedFace = faceResult.faceLandmarks;
+                            lastFaceTime = now;
+                        }
+                    } catch (e) {
+                        console.warn('[MediaPipe] 面部检测出错:', e.message || e);
+                    }
+                }
+
+                // 更新综合匹配分数
+                if (handLandmarks !== null || faceLandmarks !== null) {
+                    cachedMatchScore = calculateTotalMatchScore(
+                        cachedHands,
+                        cachedFace
+                    );
+                }
+
+                // === 绘制用户手部骨架 ===
+                if (cachedHands && cachedHands.length > 0) {
+                    cachedHands.forEach((hand, idx) => {
+                        const label = cachedHands.length > 1 ? (idx === 0 ? 'L' : 'R') : '';
+                        drawHandLandmarks(ctx, hand, 0, 0, canvasEl.width, canvasEl.height, label);
                     });
                 }
 
-                // === 始终显示匹配状态（使用缓存的分数）===
+                // === 绘制用户面部网格 ===
+                if (cachedFace && cachedFace.length > 0) {
+                    cachedFace.forEach(face => {
+                        drawFaceMesh(ctx, face, 0, 0, canvasEl.width, canvasEl.height);
+                    });
+                }
+
+                // === 始终显示匹配状态 ===
                 const statusEl = document.getElementById('pose-match-status');
                 if (statusEl) {
                     if (cachedMatchScore !== null) {
                         const pct = Math.max(0, Math.min(100, Math.round((1 - cachedMatchScore) * 100)));
-                        if (cachedMatchScore < 0.18) {
+                        if (cachedMatchScore < 0.15) {
                             statusEl.textContent = '✅ 完美匹配！可以拍照了！(' + pct + '%)';
                             statusEl.style.color = '#2ecc71';
-                        } else if (cachedMatchScore < 0.35) {
+                        } else if (cachedMatchScore < 0.30) {
                             statusEl.textContent = '🟡 接近了 (' + pct + '%)';
                             statusEl.style.color = '#f1c40f';
                         } else {
-                            statusEl.textContent = '📐 继续调整姿势... (' + pct + '%)';
-                            statusEl.style.color = '#00a8ff';
+                            statusEl.textContent = '✋ 继续调整姿势... (' + pct + '%)';
+                            statusEl.style.color = '#ff9f43';
                         }
-                    } else if (modelReadyShown && !cachedPersons) {
-                        statusEl.textContent = '🔍 未检测到人物，请面向摄像头...';
+                    } else if (modelReadyShown && !cachedHands && !cachedFace) {
+                        statusEl.textContent = '🔍 未检测到手和脸，请面向摄像头并伸出双手...';
                         statusEl.style.color = '#e74c3c';
                     }
                 }
 
-                // 每 60 帧输出一次调试信息
-                if (frameCount % 60 === 0) {
-                    console.log('[MediaPipe] 循环运行中 - 帧:', frameCount, '检测次数:', detectCount,
-                        '匹配分:', cachedMatchScore !== null ? cachedMatchScore.toFixed(3) : 'null',
-                        'videoReady:', videoEl.readyState, 'canvas:', canvasEl.width + 'x' + canvasEl.height);
+                // 每 120 帧输出一次调试信息
+                if (frameCount % 120 === 0) {
+                    console.log('[MediaPipe v5] 帧:', frameCount, '检测:', detectCount,
+                        '手部:', handsReady ? 'OK' : '--',
+                        '面部:', faceReady ? 'OK' : '--',
+                        '匹配:', cachedMatchScore !== null ? cachedMatchScore.toFixed(3) : 'null');
                 }
             } catch (loopErr) {
                 console.error('[MediaPipe] 循环异常:', loopErr.message || loopErr, loopErr.stack);
@@ -375,76 +631,90 @@
         animationFrameId = requestAnimationFrame(loop);
     }
 
-    // ============ 初始化 MediaPipe ============
-    async function initPoseLandmarker() {
-        // 防止重复初始化：如果已经在初始化中，返回同一个 Promise
+    // ============ 初始化所有模型 ============
+    async function initAllModels() {
         if (initPromise) return initPromise;
-        // 如果已经初始化成功，直接返回
-        if (videoLandmarkerReady) return true;
+        if (handsReady && faceReady) return true;
 
         initPromise = (async () => {
-        // 1) 如果 module script 已经加载了库，直接使用
-        if (window._mediapipeModuleReady && window.PoseLandmarker && window.FilesetResolver) {
-            console.log('[MediaPipe] 库已通过 module script 加载');
-        } else {
-            // 2) 等待 module script 加载完成（最多等 3 秒）
-            if (!window._mediapipeModuleReady) {
-                console.log('[MediaPipe] 等待 Vision 库加载...');
-                await new Promise((resolve) => {
-                    const timeout = setTimeout(resolve, 3000);
-                    window.addEventListener('mediapipe-module-ready', () => {
-                        clearTimeout(timeout);
-                        resolve();
-                    }, { once: true });
-                });
-            }
-
-            // 3) 降级：尝试动态 import（兼容 GitHub Pages 等场景）
-            if (!window.FilesetResolver || !window.PoseLandmarker) {
-                console.log('[MediaPipe] 尝试动态 import 加载库...');
-                try {
-                    const mod = await import('js/mediapipe/vision_bundle.mjs');
-                    window.PoseLandmarker = mod.PoseLandmarker;
-                    window.FilesetResolver = mod.FilesetResolver;
-                    console.log('[MediaPipe] 动态 import 加载成功');
-                } catch (importErr) {
-                    console.warn('[MediaPipe] 动态 import 也失败:', importErr);
+            // 等待/加载库
+            if (!window.HandLandmarker || !window.FaceLandmarker) {
+                if (!window.FilesetResolver) {
+                    console.log('[MediaPipe] 动态加载 Tasks Vision 库...');
+                    try {
+                        const mod = await import('js/mediapipe/vision_bundle.mjs');
+                        window.HandLandmarker = mod.HandLandmarker;
+                        window.FaceLandmarker = mod.FaceLandmarker;
+                        window.FilesetResolver = mod.FilesetResolver;
+                        console.log('[MediaPipe] 动态 import 加载成功');
+                    } catch (importErr) {
+                        console.warn('[MediaPipe] 动态 import 失败:', importErr);
+                    }
                 }
             }
-        }
 
-        if (!window.FilesetResolver || !window.PoseLandmarker) {
-            console.warn('[MediaPipe] Tasks Vision 库不可用（请通过 HTTP 方式访问此页面）');
-            return false;
-        }
+            if (!window.FilesetResolver || (!window.HandLandmarker && !window.FaceLandmarker)) {
+                console.warn('[MediaPipe] Tasks Vision 库不可用');
+                return false;
+            }
 
-        try {
-            const vision = await window.FilesetResolver.forVisionTasks(
-                'js/mediapipe/wasm'
-            );
+            try {
+                const vision = await window.FilesetResolver.forVisionTasks('js/mediapipe/wasm');
 
-            poseLandmarkerVideo = await window.PoseLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: 'models/pose_landmarker_lite.task',
-                    delegate: 'GPU'
-                },
-                runningMode: 'VIDEO',
-                numPoses: 4,
-                minPoseDetectionConfidence: 0.5,
-                minPosePresenceConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
+                // 初始化 HandLandmarker
+                if (window.HandLandmarker) {
+                    console.log('[MediaPipe] 初始化手部模型...');
+                    try {
+                        handLandmarkerVideo = await window.HandLandmarker.createFromOptions(vision, {
+                            baseOptions: {
+                                modelAssetPath: 'models/hand_landmarker.task',
+                                delegate: 'GPU'
+                            },
+                            runningMode: 'VIDEO',
+                            numHands: 4,
+                            minHandDetectionConfidence: 0.5,
+                            minHandPresenceConfidence: 0.5,
+                            minTrackingConfidence: 0.5
+                        });
+                        handsReady = true;
+                        console.log('[MediaPipe] ✅ 手部模型就绪');
+                    } catch (handErr) {
+                        console.warn('[MediaPipe] 手部模型初始化失败:', handErr);
+                    }
+                }
 
-            videoLandmarkerReady = true;
-            console.log('[MediaPipe] 模型加载完成，开始实时检测');
-            return true;
-        } catch (err) {
-            console.warn('[MediaPipe] 模型初始化失败:', err);
-            return false;
-        }
-        })(); // end initPromise
+                // 初始化 FaceLandmarker
+                if (window.FaceLandmarker) {
+                    console.log('[MediaPipe] 初始化面部模型...');
+                    try {
+                        faceLandmarkerVideo = await window.FaceLandmarker.createFromOptions(vision, {
+                            baseOptions: {
+                                modelAssetPath: 'models/face_landmarker.task',
+                                delegate: 'GPU'
+                            },
+                            runningMode: 'VIDEO',
+                            numFaces: 2,
+                            minFaceDetectionConfidence: 0.5,
+                            minFacePresenceConfidence: 0.5,
+                            minTrackingConfidence: 0.5,
+                            outputFaceBlendshapes: false,
+                            outputFacialTransformationMatrixes: false
+                        });
+                        faceReady = true;
+                        console.log('[MediaPipe] ✅ 面部模型就绪');
+                    } catch (faceErr) {
+                        console.warn('[MediaPipe] 面部模型初始化失败:', faceErr);
+                    }
+                }
 
-        // 初始化失败时重置锁，允许重试
+                console.log('[MediaPipe] 所有模型初始化完成');
+                return true;
+            } catch (err) {
+                console.warn('[MediaPipe] 模型初始化失败:', err);
+                return false;
+            }
+        })();
+
         initPromise.then(result => { if (!result) initPromise = null; });
         return initPromise;
     }
@@ -467,14 +737,12 @@
             });
             try { await videoEl.play(); } catch (e) { /* 忽略 */ }
 
-            // 先启动检测循环（参考骨架立即显示，不受 AI 加载影响）
             startDetectionLoop(videoEl, canvasEl);
 
-            // 后台加载 AI 模型
-            if (!videoLandmarkerReady) {
-                initPoseLandmarker().then(success => {
+            if (!handsReady && !faceReady) {
+                initAllModels().then(success => {
                     if (success) {
-                        console.log('[MediaPipe] AI 模型就绪，开始姿势检测');
+                        console.log('[MediaPipe] AI 模型就绪，开始手部+面部检测');
                     }
                 });
             }
@@ -510,11 +778,9 @@
         comp.height = 900;
         const ctx = comp.getContext('2d');
 
-        // 背景
         ctx.fillStyle = '#0a0a14';
         ctx.fillRect(0, 0, comp.width, comp.height);
 
-        // 左侧：参考照片
         const leftW = comp.width / 2;
         if (poseObj && poseObj.img) {
             const img = new Image();
@@ -530,23 +796,17 @@
                 ctx.fillRect(0, 0, leftW, comp.height);
                 try { ctx.drawImage(img, dx, dy, dw, dh); } catch (e) {}
 
-                // 绘制参考骨架
                 if (poseObj.skeleton) {
                     const template = getSkeletonTemplate(poseObj.skeleton);
                     if (template) {
                         template.persons.forEach((person, idx) => {
-                            const p = {};
-                            for (let k in person) {
-                                p[k] = person[k];
+                            if (person.handLeft) drawHandLandmarks(ctx, person.handLeft, dx, dy, dw, dh, null, true);
+                            if (person.handRight) drawHandLandmarks(ctx, person.handRight, dx, dy, dw, dh, null, true);
+                            if (person.face) {
+                                const refFace = [];
+                                person.face.forEach(pt => { refFace[pt.i] = { x: pt.x, y: pt.y }; });
+                                drawFaceMesh(ctx, refFace, dx, dy, dw, dh, true);
                             }
-                            // 简化绘制
-                            for (let i = 0; i < 33; i++) {
-                                if (p[i]) {
-                                    p[i] = { x: p[i].x, y: p[i].y, v: p[i].v };
-                                }
-                            }
-                            // 跳过复杂绘制，用通用逻辑
-                            drawPersonSkeletonWrapper(ctx, p, dx, dy, dw, dh, idx, true);
                         });
                     }
                 }
@@ -559,7 +819,6 @@
             img.src = poseObj.img;
         }
 
-        // 右侧：用户画面
         const rightW = comp.width / 2;
         const rightX = leftW;
         ctx.fillStyle = '#000';
@@ -579,21 +838,25 @@
         try { ctx.drawImage(videoEl, 0, 0, vDrawW, vDrawH); } catch (e) {}
         ctx.restore();
 
-        // 绘制用户骨架
-        if (videoLandmarkerReady && poseLandmarkerVideo) {
+        // 在用户画面上绘制用户手部和面部
+        if (handLandmarkerVideo && handsReady) {
             try {
-                const result = poseLandmarkerVideo.detectForVideo(videoEl, performance.now());
+                const result = handLandmarkerVideo.detectForVideo(videoEl, performance.now());
                 if (result && result.landmarks && result.landmarks.length > 0) {
                     result.landmarks.forEach((lm, idx) => {
-                        const person = {};
-                        lm.forEach((p, i) => {
-                            person[i] = {
-                                x: p.x,
-                                y: p.y,
-                                v: (typeof p.visibility === 'number' ? p.visibility : 1)
-                            };
-                        });
-                        drawPersonSkeletonWrapper(ctx, person, vDrawX, vDrawY, vDrawW, vDrawH, idx, false);
+                        const label = result.landmarks.length > 1 ? (idx === 0 ? 'L' : 'R') : '';
+                        drawHandLandmarks(ctx, lm, vDrawX, vDrawY, vDrawW, vDrawH, label);
+                    });
+                }
+            } catch (e) {}
+        }
+
+        if (faceLandmarkerVideo && faceReady) {
+            try {
+                const result = faceLandmarkerVideo.detectForVideo(videoEl, performance.now());
+                if (result && result.faceLandmarks && result.faceLandmarks.length > 0) {
+                    result.faceLandmarks.forEach((lm) => {
+                        drawFaceMesh(ctx, lm, vDrawX, vDrawY, vDrawW, vDrawH);
                     });
                 }
             } catch (e) {}
@@ -604,7 +867,6 @@
         ctx.textAlign = 'center';
         ctx.fillText('你的画面', rightX + rightW / 2, 40);
 
-        // 分隔线
         ctx.strokeStyle = 'rgba(255,255,255,0.1)';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -615,25 +877,23 @@
         return comp;
     }
 
-    function drawPersonSkeletonWrapper(ctx, person, ox, oy, aw, ah, idx, isRef) {
-        drawPersonSkeleton(ctx, person, ox, oy, aw, ah, idx, isRef);
-    }
-
     // ============ 导出公共 API ============
     window.MediaPipeSkeleton = {
-        init: initPoseLandmarker,
+        init: initAllModels,
         startCamera: startCamera,
         stopCamera: stopCamera,
         renderReference: renderReferenceSkeletonOnImage,
         capture: captureSkeletonPhoto,
         getTemplate: getSkeletonTemplate,
-        isReady: function () { return videoLandmarkerReady; }
+        isHandsReady: function () { return handsReady; },
+        isFaceReady: function () { return faceReady; },
+        isReady: function () { return handsReady || faceReady; }
     };
 
-    // 自动初始化（延迟一点，确保 JS 依赖已加载）
+    // 自动初始化
     setTimeout(() => {
-        if (!videoLandmarkerReady) {
-            initPoseLandmarker();
+        if (!handsReady && !faceReady) {
+            initAllModels();
         }
     }, 800);
 })();

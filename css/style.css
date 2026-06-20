@@ -1055,6 +1055,30 @@ body {
 .mediapipe-header .btn-back { color: white; }
 #pose-match-status { font-size: 14px; color: var(--accent); font-weight: 500; }
 
+/* 颜色图例指示器 */
+.mediapipe-legend {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    margin-left: auto;
+}
+.mediapipe-legend span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.mediapipe-legend .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.mediapipe-legend .dot.pose { background: #00a8ff; }
+.mediapipe-legend .dot.hand { background: #ff9f43; }
+.mediapipe-legend .dot.face { background: #2ecc71; }
+
 .mediapipe-view {
     flex: 1;
     position: relative;

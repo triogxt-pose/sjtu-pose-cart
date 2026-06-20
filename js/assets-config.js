@@ -41,12 +41,8 @@
 
         classicPhotos: [
             'assets/images/poses/classic_photos/classic_1_empresses.png',
-            'assets/images/poses/classic_photos/classic_2_wujing_xienan.png',
-            'assets/images/poses/classic_photos/classic_3_look_back.png',
-            'assets/images/poses/classic_photos/classic_3_exo.png',
-            'assets/images/poses/classic_photos/classic_4_trump.png',
-            'assets/images/poses/classic_photos/classic_4_empresses.png',
-            'assets/images/poses/classic_photos/classic_7_pro_team.png'
+            'assets/images/poses/classic_photos/classic_1_please_sit.jpg',
+            'assets/images/poses/classic_photos/classic_1_touch_face.jpg',
         ],
 
         soloFemalePoses: [

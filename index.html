@@ -9,11 +9,12 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <!-- 加载 MediaPipe Vision 库（ES 模块方式） -->
     <script type="module">
-        import { PoseLandmarker, FilesetResolver } from './js/mediapipe/vision_bundle.mjs';
-        window.PoseLandmarker = PoseLandmarker;
+        import { HandLandmarker, FaceLandmarker, FilesetResolver } from './js/mediapipe/vision_bundle.mjs';
+        window.HandLandmarker = HandLandmarker;
+        window.FaceLandmarker = FaceLandmarker;
         window.FilesetResolver = FilesetResolver;
         window._mediapipeModuleReady = true;
-        console.log('✅ MediaPipe Vision 库加载成功');
+        console.log('✅ MediaPipe Vision 库加载成功（Hands + Face）');
         window.dispatchEvent(new CustomEvent('mediapipe-module-ready'));
     </script>
 </head>
@@ -235,8 +236,12 @@
         <div class="mediapipe-container">
             <div class="mediapipe-header">
                 <button class="btn-back" onclick="closeMediaPipe()">← 返回</button>
-                <span>📸 AI姿势比对</span>
+                <span>📸 AI手+脸比对</span>
                 <span id="pose-match-status">准备中...</span>
+                <div class="mediapipe-legend">
+                    <span><span class="dot hand"></span>手部</span>
+                    <span><span class="dot face"></span>面部</span>
+                </div>
             </div>
             <div class="mediapipe-view">
                 <video id="mediapipe-video" autoplay playsinline></video>
@@ -250,13 +255,7 @@
                 </div>
             </div>
             <div class="mediapipe-info">
-                <p>👆 请将身体与骨骼线框对齐，绿灯亮起即可拍照</p>
-                <div class="match-progress">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="match-progress-fill"></div>
-                    </div>
-                    <span id="match-percent">0%</span>
-                </div>
+                <p>👆 请将身体与虚线框对齐，绿灯亮起即可拍照</p>
             </div>
             <div class="mediapipe-controls">
                 <button class="btn-pose-switch" id="btn-toggle-skeleton" onclick="toggleSkeleton()" title="显示/隐藏骨骼参考">👁️</button>

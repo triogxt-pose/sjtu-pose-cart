@@ -145,12 +145,8 @@ const POSES = [
 
     // ===== 经典照片复刻 (classic_photos/) - MediaPipe 可用 =====
     { id: 'pose22', name: '经典·甄嬛传(单人)',   emoji: '👑', people: '1',   style: '经典照片', desc: '复刻甄嬛传经典造型',         img: 'assets/images/poses/classic_photos/classic_1_empresses.png',      hasSkeleton: true, skeleton: 'classic_1_empresses' },
-    { id: 'pose23', name: '经典·吴京谢楠(双人)', emoji: '💑', people: '2',   style: '经典照片', desc: '复刻吴京谢楠经典姿势',       img: 'assets/images/poses/classic_photos/classic_2_wujing_xienan.png',  hasSkeleton: true, skeleton: 'classic_2_wujing_xienan' },
-    { id: 'pose24', name: '经典·回头的诱惑(三人)', emoji: '👀', people: '3-5', style: '经典照片', desc: '复刻回头的诱惑经典造型',     img: 'assets/images/poses/classic_photos/classic_3_look_back.png',      hasSkeleton: true, skeleton: 'classic_3_look_back' },
-    { id: 'pose25', name: '经典·EXO(三人)',       emoji: '🎤', people: '3-5', style: '经典照片', desc: '复刻EXO经典造型',             img: 'assets/images/poses/classic_photos/classic_3_exo.png',             hasSkeleton: true, skeleton: 'classic_3_exo' },
-    { id: 'pose26', name: '经典·特朗普(四人)',    emoji: '🦅', people: '3-5', style: '经典照片', desc: '复刻特朗普经典姿势',         img: 'assets/images/poses/classic_photos/classic_4_trump.png',          hasSkeleton: true, skeleton: 'classic_4_trump' },
-    { id: 'pose27', name: '经典·甄嬛传(四人)',    emoji: '👸', people: '3-5', style: '经典照片', desc: '复刻甄嬛传四人经典造型',     img: 'assets/images/poses/classic_photos/classic_4_empresses.png',      hasSkeleton: true, skeleton: 'classic_4_empresses' },
-    { id: 'pose28', name: '经典·专业团队(七人)',  emoji: '🕶️', people: '6+',  style: '经典照片', desc: '复刻专业团队经典造型',       img: 'assets/images/poses/classic_photos/classic_7_pro_team.png',       hasSkeleton: true, skeleton: 'classic_7_pro_team' },
+    { id: 'pose23', name: '经典·请坐(单人)',       emoji: '🪑', people: '1',   style: '经典照片', desc: '伸出右手，面带微笑',     img: 'assets/images/poses/classic_photos/classic_1_please_sit.jpg',      hasSkeleton: true, skeleton: 'classic_1_please_sit' },
+    { id: 'pose24', name: '经典·向佐摸鼻梁(单人)', emoji: '🤏', people: '1',   style: '经典照片', desc: '手贴脸颊，近景特写',       img: 'assets/images/poses/classic_photos/classic_1_touch_face.jpg', hasSkeleton: true, skeleton: 'classic_1_touch_face' },
 ];
 
 // ===== 校园最优游览顺序（用于智能路线规划） =====
