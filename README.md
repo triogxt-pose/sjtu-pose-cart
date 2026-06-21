@@ -144,7 +144,3 @@ sjtu-pose-cart/
 ├── run_train.py             # 训练启动脚本
 └── README.md
 <<<<<<< HEAD
-```
-=======
-```
->>>>>>> cccea5af51e38ba709ee097fc371770c3fd47140
