@@ -143,4 +143,8 @@ sjtu-pose-cart/
 ├── train_skeleton.py        # 骨架训练脚本（提取模板）
 ├── run_train.py             # 训练启动脚本
 └── README.md
+<<<<<<< HEAD
 ```
+=======
+```
+>>>>>>> cccea5af51e38ba709ee097fc371770c3fd47140
