@@ -82,12 +82,3 @@ sjtu-pose-cart/
 ├── run_train.py             # 训练启动脚本
 └── README.md
 ```
-
----
-
-### 部署到 GitHub Pages
-
-1. 上传本项目到 GitHub 仓库
-2. 进入 Settings → Pages
-3. Source 选择 `main` 分支，目录选择 `/ (root)`
-4. 保存后等待几分钟即可通过 `https://你的用户名.github.io/仓库名/` 访问
